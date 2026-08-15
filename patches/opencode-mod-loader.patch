@@ -894,7 +894,7 @@ index 0000000000..ecb7a8bab1
 +  )
 +}
 diff --git a/packages/app/src/context/platform.tsx b/packages/app/src/context/platform.tsx
-index 4c374961a3..c3204a232e 100644
+index 4c374961a3..4744ece132 100644
 --- a/packages/app/src/context/platform.tsx
 +++ b/packages/app/src/context/platform.tsx
 @@ -26,6 +26,42 @@ export type FatalRendererErrorLog = {
@@ -940,7 +940,7 @@ index 4c374961a3..c3204a232e 100644
  
  type PlatformBase = {
    /** App version */
-@@ -123,6 +159,23 @@ type PlatformBase = {
+@@ -123,6 +159,24 @@ type PlatformBase = {
  
    /** Record a fatal renderer error in platform logs (desktop only) */
    recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
@@ -949,6 +949,7 @@ index 4c374961a3..c3204a232e 100644
 +  mods?: {
 +    list(): Promise<DesktopMod[]>
 +    safeMode(): Promise<boolean>
++    status(): Promise<{ version: string; enabled: boolean }>
 +    setSafeMode(enabled: boolean): Promise<boolean>
 +    reload(): Promise<DesktopMod[]>
 +    preload(id: string): Promise<{ mod: DesktopMod; conflicts: DesktopModConflict[]; directory: string }>
@@ -964,6 +965,46 @@ index 4c374961a3..c3204a232e 100644
  }
  
  export type Platform = PlatformBase &
+diff --git a/packages/app/src/pages/home/legacy-home.tsx b/packages/app/src/pages/home/legacy-home.tsx
+index 0556f7cf60..5a8e0032fd 100644
+--- a/packages/app/src/pages/home/legacy-home.tsx
++++ b/packages/app/src/pages/home/legacy-home.tsx
+@@ -2,6 +2,7 @@ import { DialogSelectServer } from "@/components/dialog-select-server"
+ import { useDirectoryPicker } from "@/components/directory-picker"
+ import { useGlobal } from "@/context/global"
+ import { useLanguage } from "@/context/language"
++import { usePlatform } from "@/context/platform"
+ import { type ServerConnection, useServer } from "@/context/server"
+ import { useServerSync } from "@/context/server-sync"
+ import { base64Encode } from "@opencode-ai/core/util/encode"
+@@ -11,7 +12,7 @@ import { Icon } from "@opencode-ai/ui/icon"
+ import { Logo } from "@opencode-ai/ui/logo"
+ import { useNavigate } from "@solidjs/router"
+ import { DateTime } from "luxon"
+-import { createMemo, For, Match, Switch } from "solid-js"
++import { createMemo, createResource, For, Match, Show, Switch } from "solid-js"
+ 
+ export function LegacyHome() {
+   const sync = useServerSync()
+@@ -21,6 +22,8 @@ export function LegacyHome() {
+   const global = useGlobal()
+   const server = useServer()
+   const language = useLanguage()
++  const platform = usePlatform()
++  const [modLoader] = createResource(() => platform.mods?.status())
+   const homedir = createMemo(() => sync().data.path.home)
+   const serverUnreachable = createMemo(() => global.servers.health[server.key]?.healthy === false)
+   const recent = createMemo(() => {
+@@ -68,6 +71,9 @@ export function LegacyHome() {
+   return (
+     <div class="mx-auto mt-55 w-full md:w-auto px-4">
+       <Logo class="md:w-xl opacity-12" />
++      <Show when={modLoader()?.enabled}>
++        <div class="mt-2 text-center text-12-medium text-text-weak">Mod Loader v{modLoader()!.version}</div>
++      </Show>
+       <Button
+         size="large"
+         variant="ghost"
 diff --git a/packages/app/src/pages/layout.tsx b/packages/app/src/pages/layout.tsx
 index 694b610903..4da816ba83 100644
 --- a/packages/app/src/pages/layout.tsx
@@ -1396,7 +1437,7 @@ index 67696a5470..5efd937c5c 100644
          onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
          onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
 diff --git a/packages/desktop/src/main/ipc.ts b/packages/desktop/src/main/ipc.ts
-index 5ecd4cb8c4..08b7f80827 100644
+index 5ecd4cb8c4..adf7d47f56 100644
 --- a/packages/desktop/src/main/ipc.ts
 +++ b/packages/desktop/src/main/ipc.ts
 @@ -13,6 +13,7 @@ import { getStore, removeStoreFileIfEmpty } from "./store"
@@ -1415,12 +1456,13 @@ index 5ecd4cb8c4..08b7f80827 100644
  }
  
  export function registerIpcHandlers(deps: Deps) {
-@@ -88,6 +90,100 @@ export function registerIpcHandlers(deps: Deps) {
+@@ -88,6 +90,101 @@ export function registerIpcHandlers(deps: Deps) {
    ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
      deps.recordFatalRendererError(error),
    )
 +  ipcMain.handle("mods-list", () => deps.mods.list())
 +  ipcMain.handle("mods-safe-mode", () => deps.mods.safeMode())
++  ipcMain.handle("mods-status", () => deps.mods.status())
 +  ipcMain.handle("mods-set-safe-mode", (_event: IpcMainInvokeEvent, enabled: boolean) => {
 +    deps.mods.setSafeMode(enabled)
 +    return deps.mods.safeMode()
@@ -1999,10 +2041,10 @@ index 0000000000..3a04d5ab18
 +}
 diff --git a/packages/desktop/src/main/mods.ts b/packages/desktop/src/main/mods.ts
 new file mode 100644
-index 0000000000..34f0795efc
+index 0000000000..87099e77fa
 --- /dev/null
 +++ b/packages/desktop/src/main/mods.ts
-@@ -0,0 +1,448 @@
+@@ -0,0 +1,454 @@
 +import { mkdir, readdir, realpath, readFile, stat } from "node:fs/promises"
 +import { dirname, isAbsolute, join, relative } from "node:path"
 +import { app, BrowserWindow, net, protocol, shell } from "electron"
@@ -2051,6 +2093,7 @@ index 0000000000..34f0795efc
 +
 +const maxManifestBytes = 1024 * 1024
 +const reloadBatchSize = 16
++export const MOD_LOADER_VERSION = "0.1.1"
 +
 +export function createModManager(version: string) {
 +  const installed = new Map<string, InstalledMod>()
@@ -2079,6 +2122,10 @@ index 0000000000..34f0795efc
 +
 +  function safeMode() {
 +    return getStore().get(MODS_SAFE_MODE_KEY) === true
++  }
++
++  function status() {
++    return { version: MOD_LOADER_VERSION, enabled: !safeMode() }
 +  }
 +
 +  function isEnabled(id: string) {
@@ -2403,6 +2450,7 @@ index 0000000000..34f0795efc
 +    serverEntries,
 +    shareProductionDatabase,
 +    safeMode,
++    status,
 +    setSafeMode,
 +    setEnabled,
 +    setPriority,
@@ -2545,16 +2593,17 @@ index f6f4030dba..cb5e0e5cfc 100644
 +export const MODS_SAFE_MODE_KEY = "modsSafeMode"
 +export const MOD_PRIORITIES_KEY = "modPriorities"
 diff --git a/packages/desktop/src/preload/index.ts b/packages/desktop/src/preload/index.ts
-index 1a0056dfe7..41b8ddac71 100644
+index 1a0056dfe7..954bdcbad0 100644
 --- a/packages/desktop/src/preload/index.ts
 +++ b/packages/desktop/src/preload/index.ts
-@@ -129,6 +129,21 @@ const api: ElectronAPI = {
+@@ -129,6 +129,22 @@ const api: ElectronAPI = {
    exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
    setForceFocus: (enabled) => ipcRenderer.invoke("set-force-focus", enabled),
    recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
 +  mods: {
 +    list: () => ipcRenderer.invoke("mods-list"),
 +    safeMode: () => ipcRenderer.invoke("mods-safe-mode"),
++    status: () => ipcRenderer.invoke("mods-status"),
 +    setSafeMode: (enabled) => ipcRenderer.invoke("mods-set-safe-mode", enabled),
 +    reload: () => ipcRenderer.invoke("mods-reload"),
 +    preload: (id) => ipcRenderer.invoke("mods-preload", id),
@@ -2595,7 +2644,7 @@ index 0000000000..f09e127acd
 +
 +contextBridge.exposeInMainWorld("opencodeMod", api)
 diff --git a/packages/desktop/src/preload/types.ts b/packages/desktop/src/preload/types.ts
-index ea201af63e..1c7d07dd9f 100644
+index ea201af63e..a3f44dc1b7 100644
 --- a/packages/desktop/src/preload/types.ts
 +++ b/packages/desktop/src/preload/types.ts
 @@ -28,6 +28,14 @@ export type UpdaterAPI = {
@@ -2648,13 +2697,14 @@ index ea201af63e..1c7d07dd9f 100644
  
  export type ElectronAPI = {
    killSidecar: () => Promise<void>
-@@ -108,4 +144,19 @@ export type ElectronAPI = {
+@@ -108,4 +144,20 @@ export type ElectronAPI = {
    exportDebugLogs: () => Promise<string>
    setForceFocus: (enabled: boolean) => Promise<void>
    recordFatalRendererError: (error: FatalRendererError) => Promise<void>
 +  mods: {
 +    list: () => Promise<DesktopMod[]>
 +    safeMode: () => Promise<boolean>
++    status: () => Promise<{ version: string; enabled: boolean }>
 +    setSafeMode: (enabled: boolean) => Promise<boolean>
 +    reload: () => Promise<DesktopMod[]>
 +    preload: (id: string) => Promise<{ mod: DesktopMod; conflicts: DesktopModConflict[]; directory: string }>
@@ -2681,221 +2731,3 @@ index ac5ded25f1..3c9bda6fdf 100644
      restart: async () => {
        await window.api.killSidecar().catch(() => undefined)
        window.api.relaunch()
-diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
-index 86238f1a84..f56a69c78d 100644
---- a/packages/opencode/src/config/config.ts
-+++ b/packages/opencode/src/config/config.ts
-@@ -475,6 +475,24 @@ const layer = Layer.effect(
-           yield* Effect.logDebug("loaded custom config from OPENCODE_CONFIG_CONTENT")
-         }
- 
-+        const desktopModPlugins = (() => {
-+          try {
-+            const value = JSON.parse(process.env.OPENCODE_DESKTOP_MOD_PLUGINS ?? "")
-+            if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return []
-+            return value
-+          } catch {
-+            return []
-+          }
-+        })()
-+        if (desktopModPlugins.length) {
-+          yield* mergePluginOrigins(
-+            "OPENCODE_DESKTOP_MOD_PLUGINS",
-+            desktopModPlugins.map((spec) => pathToFileURL(spec).href),
-+            "global",
-+          )
-+          yield* Effect.logDebug("loaded desktop MOD plugins", { count: desktopModPlugins.length })
-+        }
-+
-         const activeAccount = Option.getOrUndefined(
-           yield* accountSvc.active().pipe(Effect.catch(() => Effect.succeed(Option.none()))),
-         )
-diff --git a/packages/opencode/src/session/processor.ts b/packages/opencode/src/session/processor.ts
-index 20aa8a8404..20b0a93e0f 100644
---- a/packages/opencode/src/session/processor.ts
-+++ b/packages/opencode/src/session/processor.ts
-@@ -661,6 +661,23 @@ const layer = Layer.effect(
-               SessionRetry.policy({
-                 provider: input.model.providerID,
-                 parse,
-+                decide: ({ error, parsed }) =>
-+                  plugin.trigger(
-+                    "chat.retry",
-+                    {
-+                      sessionID: ctx.sessionID,
-+                      provider: input.model.providerID,
-+                      error,
-+                      parsed: {
-+                        name: parsed.name,
-+                        data: parsed.data,
-+                      },
-+                    },
-+                    {
-+                      retry: undefined as false | { message: string } | undefined,
-+                      delay: undefined as number | undefined,
-+                    },
-+                  ),
-                 set: (info) => {
-                   return status.set(ctx.sessionID, {
-                     type: "retry",
-diff --git a/packages/opencode/src/session/retry.ts b/packages/opencode/src/session/retry.ts
-index 4139665bd2..2e2471b6be 100644
---- a/packages/opencode/src/session/retry.ts
-+++ b/packages/opencode/src/session/retry.ts
-@@ -176,24 +176,36 @@ function parseJSON(value: unknown) {
- export function policy(opts: {
-   provider: string
-   parse: (error: unknown) => Err
-+  decide?: (input: { error: unknown; parsed: Err }) => Effect.Effect<{ retry?: false | Retryable; delay?: number }>
-   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
- }) {
-+  const decide =
-+    opts.decide ??
-+    (() => Effect.succeed<{ retry?: false | Retryable; delay?: number }>({}))
-+
-   return Schedule.fromStepWithMetadata(
-     Effect.succeed((meta: Schedule.InputMetadata<unknown>) => {
-       const error = opts.parse(meta.input)
--      const retry = retryable(error, opts.provider)
--      if (!retry) return Cause.done(meta.attempt)
--      return Effect.gen(function* () {
--        const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
--        const now = yield* Clock.currentTimeMillis
--        yield* opts.set({
--          attempt: meta.attempt,
--          message: retry.message,
--          action: retry.action,
--          next: now + wait,
-+      return decide({ error: meta.input, parsed: error }).pipe(
-+        Effect.flatMap((decision) => {
-+          const retry = decision.retry === false ? undefined : (decision.retry ?? retryable(error, opts.provider))
-+          if (!retry) return Cause.done(meta.attempt)
-+          return Effect.gen(function* () {
-+            const wait =
-+              typeof decision.delay === "number" && Number.isFinite(decision.delay) && decision.delay >= 0
-+                ? decision.delay
-+                : delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
-+            const now = yield* Clock.currentTimeMillis
-+            yield* opts.set({
-+              attempt: meta.attempt,
-+              message: retry.message,
-+              action: retry.action,
-+              next: now + wait,
-+            })
-+            return [meta.attempt, Duration.millis(wait)] as [number, Duration.Duration]
-+          })
-         })
--        return [meta.attempt, Duration.millis(wait)] as [number, Duration.Duration]
--      })
-+      )
-     }),
-   )
- }
-diff --git a/packages/opencode/test/session/retry.test.ts b/packages/opencode/test/session/retry.test.ts
-index 30ac879a6a..323e52c93b 100644
---- a/packages/opencode/test/session/retry.test.ts
-+++ b/packages/opencode/test/session/retry.test.ts
-@@ -115,6 +115,39 @@ describe("session.retry.delay", () => {
-       })
-     }),
-   )
-+
-+  it.instance("policy allows a MOD to force retries", () =>
-+    Effect.gen(function* () {
-+      const sessionID = SessionID.make("session-retry-mod-test")
-+      const timeout = new DOMException("The operation was aborted due to timeout", "TimeoutError")
-+      const status = yield* SessionStatus.Service
-+      const step = yield* Schedule.toStepWithMetadata(
-+        SessionRetry.policy({
-+          provider: "test",
-+          parse: () => wrap(timeout.message),
-+          decide: ({ error }) => {
-+            expect(error).toBe(timeout)
-+            return Effect.succeed({ retry: { message: "Request timed out; retrying" }, delay: 0 })
-+          },
-+          set: (info) =>
-+            status.set(sessionID, {
-+              type: "retry",
-+              attempt: info.attempt,
-+              message: info.message,
-+              next: info.next,
-+            }),
-+        }),
-+      )
-+
-+      yield* step(timeout)
-+
-+      expect(yield* status.get(sessionID)).toMatchObject({
-+        type: "retry",
-+        attempt: 1,
-+        message: "Request timed out; retrying",
-+      })
-+    }),
-+  )
- })
- 
- describe("session.retry.retryable", () => {
-diff --git a/packages/plugin/src/index.ts b/packages/plugin/src/index.ts
-index edfa0139df..cc08dc4dfa 100644
---- a/packages/plugin/src/index.ts
-+++ b/packages/plugin/src/index.ts
-@@ -216,6 +216,21 @@ export type ProviderHook = {
-   models?: (provider: ProviderV2, ctx: ProviderHookContext) => Promise<Record<string, ModelV2>>
- }
- 
-+export type RetryHook = {
-+  sessionID: string
-+  provider: string
-+  error: unknown
-+  parsed: {
-+    name: string
-+    data: unknown
-+  }
-+}
-+
-+export type RetryDecision = {
-+  retry?: false | { message: string }
-+  delay?: number
-+}
-+
- /** @deprecated Use AuthOAuthResult instead. */
- export type AuthOuathResult = AuthOAuthResult
- 
-@@ -258,6 +273,13 @@ export interface Hooks {
-     input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
-     output: { headers: Record<string, string> },
-   ) => Promise<void>
-+  /**
-+   * Decide whether a failed model turn should be retried.
-+   *
-+   * Set `retry` to an object to force a retry, `false` to suppress the default
-+   * retry decision, and `delay` to an explicit delay in milliseconds.
-+   */
-+  "chat.retry"?: (input: RetryHook, output: RetryDecision) => Promise<void>
-   "permission.ask"?: (input: Permission, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
-   "command.execute.before"?: (
-     input: { command: string; sessionID: string; arguments: string },
-diff --git a/packages/sdk/js/src/v2/gen/types.gen.ts b/packages/sdk/js/src/v2/gen/types.gen.ts
-index 90c91e9158..1fc3427cf1 100644
---- a/packages/sdk/js/src/v2/gen/types.gen.ts
-+++ b/packages/sdk/js/src/v2/gen/types.gen.ts
-@@ -2011,6 +2011,7 @@ export type Config = {
-     max_lines?: number
-     max_bytes?: number
-   }
-+  diff?: ConfigV2Diff
-   compaction?: {
-     auto?: boolean
-     prune?: boolean
-@@ -3836,6 +3837,11 @@ export type ConfigV2ReferenceLocal = {
-   hidden?: boolean
- }
- 
-+export type ConfigV2Diff = {
-+  max_files?: number
-+  max_patch_bytes?: number
-+}
-+
- export type PolicyEffect = "allow" | "deny"
- 
- export type ConfigV2ExperimentalPolicy = {
