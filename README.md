@@ -8,7 +8,24 @@ host/server extension points.
 The patch was created against OpenCode commit
 `5e5cc924b8b1d1c5348309d2b23dbc59c72d27d2` (Desktop `1.18.10`).
 
-## Install
+## Windows install (recommended)
+
+Download `opencode-desktop-win-x64.exe` from the
+[v0.1.0 release](https://github.com/UR-xiaoyang/opencode-mod-loader/releases/tag/v0.1.0)
+and run it. This is a Windows x64 OpenCode Desktop installer built from the target
+base with the MOD loader patch already applied.
+
+The installer is not code signed. Verify its SHA-256 before running it:
+
+```text
+28B9827FA5A2AE8C9A4BF5DA06C354ACDE6BC206E9220836B0513E196570DA34
+```
+
+Then open the installed app, open the command palette, and run `Open MOD folder`.
+Copy a MOD folder into that location, run `Refresh MODs`, and enable it from
+`Settings > MODs`.
+
+## Source patch install
 
 This patch is for a source checkout of OpenCode. It does not patch an already
 installed Desktop application.
