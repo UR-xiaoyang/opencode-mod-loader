@@ -1,97 +1,42 @@
-# OpenCode Desktop MOD Loader Patch
+# OpenCode Desktop MOD Loader
 
-This repository packages a Desktop MOD loader for OpenCode as a source patch. It
-adds local MOD discovery, settings management, load priorities, conflict detection,
-safe mode, sandboxed MOD pages, sidebar and command contributions, and opt-in trusted
-host/server extension points.
+This repository contains the source overlay for the OpenCode Desktop MOD loader.
+It intentionally does not vendor the full OpenCode repository.
 
-The patch was created against OpenCode commit
-`5e5cc924b8b1d1c5348309d2b23dbc59c72d27d2` (Desktop `1.18.10`).
-When the MOD loader is enabled, the legacy home screen displays its version below
-the OpenCode logo.
+The files under `src/` mirror only the OpenCode paths changed or added by the MOD
+loader. `mod-loader.json` pins the upstream repository and base commit that the
+overlay targets.
 
-## Windows install (recommended)
+## Develop
 
-Download the `opencode-desktop-mod-loader-v*-win-x64.exe` installer from the latest
-release and run it. This is a Windows x64 OpenCode Desktop installer built from the
-target base with the MOD loader patch already applied.
+Clone the upstream base and overlay this repository's sources:
 
-The installer is not code signed. Verify its SHA-256 against the matching
-`SHA256SUMS-v*.txt` asset in the release before running it.
+```powershell
+git clone https://github.com/UR-xiaoyang/opencode.git opencode
+git clone https://github.com/UR-xiaoyang/opencode-mod-loader.git opencode-mod-loader
+cd opencode
+git checkout 5e5cc924b8b1d1c5348309d2b23dbc59c72d27d2
+Copy-Item ../opencode-mod-loader/src/* . -Recurse -Force
 
-Then open the installed app, open the command palette, and run `Open MOD folder`.
-Copy a MOD folder into that location, run `Refresh MODs`, and enable it from
-`Settings > MODs`.
-
-## Source patch install
-
-This patch is for a source checkout of OpenCode. It does not patch an already
-installed Desktop application.
-
-1. Install Git and Bun.
-2. Clone both repositories:
-
-   ```powershell
-   git clone https://github.com/UR-xiaoyang/opencode.git opencode
-   git clone https://github.com/UR-xiaoyang/opencode-mod-loader.git opencode-mod-loader
-   ```
-
-3. Check out the exact base commit and apply the patch:
-
-   ```powershell
-   cd opencode
-   git checkout 5e5cc924b8b1d1c5348309d2b23dbc59c72d27d2
-   git apply --check ../opencode-mod-loader/patches/opencode-mod-loader.patch
-   git apply ../opencode-mod-loader/patches/opencode-mod-loader.patch
-   ```
-
-4. Install dependencies, regenerate client code, verify types, and start Desktop:
-
-   ```powershell
-   bun install
-   cd packages/client
-   bun run generate
-   cd ../desktop
-   bun typecheck
-   bun dev
-   ```
-
-5. In the Desktop app, open the command palette and run `Open MOD folder`. Copy
-   a MOD folder into that location, then run `Refresh MODs` and enable it from
-   `Settings > MODs`.
-
-The patch includes `share-production-chats`, an example MOD. Its source folder is
-`packages/desktop/mods/share-production-chats`; copy that folder into the MOD folder
-opened by the app.
-
-## MOD structure
-
-Each MOD is a directory whose name matches the `id` in its `mod.json`:
-
-```text
-example.mod/
-  mod.json
-  index.html
+bun install
+cd packages/client
+bun run generate
+cd ../desktop
+bun dev
 ```
 
-See [MODS.md](docs/MODS.md) for the full manifest, permissions, contribution APIs,
-conflict rules, and recovery instructions.
+## Source Layout
 
-## Security
+- `src/packages/app`: renderer integration, settings, sidebar, and trusted host MOD APIs.
+- `src/packages/desktop`: MOD discovery, permissions, IPC, preload APIs, and example MODs.
+- `src/packages/desktop/MODS.md`: manifest and MOD API documentation.
 
-MOD pages are served from an isolated `oc-mod://` origin and receive only a narrow
-storage/window API. Permissions such as `ui.host`, `server.host`, and
-`server.database` deliberately execute trusted local code with much broader access.
-Only enable MODs whose source you trust.
+## Releases
 
-## Known baseline issue
+The release workflow checks out the pinned upstream base, copies the `src/` overlay,
+generates `opencode-mod-loader.patch`, validates it with `git apply --check`, and
+publishes the patch alongside the Windows installer and checksum.
 
-At the target commit, `bun typecheck` in `packages/desktop` is currently blocked by
-an existing syntax error in `packages/app/src/custom-elements.d.ts`. The same error
-occurs before this patch is applied. The patch itself passes `git apply --check`, the
-Desktop MOD manifest tests, and the OpenCode retry-hook tests.
-
-## Updating
-
-This is a patch against one specific OpenCode commit. Before applying it to a newer
-OpenCode revision, run `git apply --check` first and resolve any reported conflicts.
+`Build Desktop Packages` is a manual GitHub Actions workflow that produces Windows,
+Linux (AppImage, DEB, RPM), and macOS (DMG, ZIP) installer artifacts from the same
+overlay.
