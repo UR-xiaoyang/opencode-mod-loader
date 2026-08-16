@@ -46,13 +46,16 @@ jobs:
       - name: Apply MOD Loader overlay
         shell: pwsh
         run: |
-          Copy-Item "$env:GITHUB_WORKSPACE\src\*" "$env:GITHUB_WORKSPACE\opencode" -Recurse -Force
-          git -C opencode add -A
-          git -C opencode diff --cached --binary HEAD -- . > "$env:GITHUB_WORKSPACE\opencode-mod-loader.patch"
-          git -C opencode reset --hard HEAD
-          git -C opencode clean -fd
-          git -C opencode apply --check "$env:GITHUB_WORKSPACE\opencode-mod-loader.patch"
-          git -C opencode apply "$env:GITHUB_WORKSPACE\opencode-mod-loader.patch"
+          $source = Join-Path $env:GITHUB_WORKSPACE "src"
+          $upstream = Join-Path $env:GITHUB_WORKSPACE "opencode"
+          $patch = Join-Path $env:GITHUB_WORKSPACE "opencode-mod-loader.patch"
+          Copy-Item (Join-Path $source "*") $upstream -Recurse -Force
+          git -C $upstream add -A
+          git -C $upstream diff --cached --binary HEAD -- . > $patch
+          git -C $upstream reset --hard HEAD
+          git -C $upstream clean -fd
+          git -C $upstream apply --check $patch
+          git -C $upstream apply $patch
 
       - name: Install dependencies
         shell: pwsh
