@@ -84,7 +84,7 @@ jobs:
           $extensions = @${{ matrix.extensions }}
           $output = Join-Path $env:GITHUB_WORKSPACE "release-artifacts"
           New-Item -ItemType Directory -Force -Path $output | Out-Null
-          $packages = Get-ChildItem "opencode/packages/desktop/dist" -File -Recurse |
+          $packages = Get-ChildItem "opencode/packages/desktop/dist" -File |
             Where-Object { $_.Extension -in $extensions }
           if ($packages.Count -eq 0) {
             throw "No installer artifacts were produced."
