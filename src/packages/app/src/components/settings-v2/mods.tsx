@@ -12,6 +12,7 @@ export const SettingsModsV2: Component = () => {
   const dialog = useDialog()
   const [mods, { refetch }] = createResource(() => platform.mods?.list(), { initialValue: [] as DesktopMod[] })
   const [safeMode, { refetch: refetchSafeMode }] = createResource(() => platform.mods?.safeMode(), { initialValue: false })
+  const modList = () => mods.latest ?? []
 
   const applyChange = (mod: DesktopMod) => {
     if (mod.contributes?.server || mod.contributes?.database) {
@@ -40,7 +41,9 @@ export const SettingsModsV2: Component = () => {
   }
 
   const enable = async (mod: DesktopMod) => {
-    const report = await platform.mods?.preload(mod.id)
+    const modManager = platform.mods
+    if (!modManager) return
+    const report = await modManager.preload(mod.id)
     if (!report) return
     if (report.conflicts.length) {
       void dialog.show(() => (
@@ -57,7 +60,7 @@ export const SettingsModsV2: Component = () => {
       ))
       return
     }
-    const loaded = await platform.mods.setEnabled(mod.id, true)
+    const loaded = await modManager.setEnabled(mod.id, true)
     applyChange(loaded.find((item) => item.id === mod.id) ?? mod)
   }
 
@@ -106,12 +109,12 @@ export const SettingsModsV2: Component = () => {
         </div>
 
         <Show
-          when={mods.latest.length}
+          when={modList().length}
           fallback={<div class="settings-v2-servers-status">No MODs found in the MOD folder.</div>}
         >
           <div class="settings-v2-section">
             <SettingsListV2>
-              <For each={mods.latest}>
+              <For each={modList()}>
                 {(mod) => (
                   <SettingsRowV2
                     title={mod.name}

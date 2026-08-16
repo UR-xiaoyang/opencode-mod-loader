@@ -5,6 +5,7 @@ import type { DesktopMenuAction } from "../desktop-menu"
 import { ServerConnection } from "./server"
 import type { WslServersPlatform } from "../wsl/types"
 import type { UpdaterPlatform } from "../updater"
+import type { DraftStore } from "@/utils/draft-store"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
@@ -67,11 +68,14 @@ type PlatformBase = {
   /** App version */
   version?: string
 
-  /** Open a URL in the default browser */
-  openLink(url: string): void
+  /** Open a web or mail URL in the default system application */
+  openExternal(url: string): void
 
   /** Open a local path in a local app (desktop only) */
   openPath?(path: string, app?: string): Promise<void>
+
+  /** Open a local file URL in its default app (desktop only) */
+  openLocalFile?(url: string): void
 
   /** Reveal a local path in the system file manager; false when the path does not exist (desktop only) */
   revealPath?(path: string): Promise<boolean>
@@ -79,14 +83,8 @@ type PlatformBase = {
   /** Restart the app  */
   restart(): Promise<void>
 
-  /** Navigate back in history */
-  back(): void
-
-  /** Navigate forward in history */
-  forward(): void
-
-  /** Send a system notification (optional deep link) */
-  notify(title: string, description?: string, href?: string): Promise<void>
+  /** Send a system notification */
+  notify(title: string, description?: string, onClick?: () => void): Promise<void>
 
   /** Open a native attachment picker and read selected files sequentially (desktop only) */
   openAttachmentPickerDialog?(
@@ -102,6 +100,9 @@ type PlatformBase = {
 
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage
+
+  /** Prompt drafts, history, and their blobs. */
+  draftStore?: DraftStore
 
   /** Stable platform window identity for window-scoped persistence */
   windowID?: string
@@ -126,9 +127,6 @@ type PlatformBase = {
 
   /** Set the preferred display backend (desktop only) */
   setDisplayBackend?(backend: DisplayBackend): Promise<void>
-
-  /** Parse markdown to HTML using native parser (desktop only, returns unprocessed code blocks) */
-  parseMarkdown?(markdown: string): Promise<string>
 
   /** Webview zoom level (desktop only) */
   webviewZoom?: Accessor<number>
@@ -165,7 +163,7 @@ type PlatformBase = {
     list(): Promise<DesktopMod[]>
     safeMode(): Promise<boolean>
     status(): Promise<{ version: string; enabled: boolean }>
-    setSafeMode(enabled: boolean): Promise<boolean>
+    setSafeMode(enabled: boolean): Promise<DesktopMod[]>
     reload(): Promise<DesktopMod[]>
     preload(id: string): Promise<{ mod: DesktopMod; conflicts: DesktopModConflict[]; directory: string }>
     setEnabled(id: string, enabled: boolean, resolution?: "candidate" | "existing"): Promise<DesktopMod[]>

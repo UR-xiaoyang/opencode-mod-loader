@@ -323,11 +323,13 @@ export function ModSidebarPanel(props: { panel: ModPanel }) {
 
   const receive = (event: MessageEvent<ModMessage>) => {
     if (event.source !== frame?.contentWindow) return
-    if (event.data?.source !== "opencode-mod" || !event.data.requestID || !event.data.action) return
+    const request = event.data
+    if (request?.source !== "opencode-mod" || !request.requestID || !request.action) return
     const mod = panel()?.mod
     if (!mod || !platform.mods) return
-    void runRequest(platform.mods, mod.id, event.data)
-      .then((value) => reply(event, { source: "opencode-host", requestID: event.data.requestID, ok: true, value }))
+    const modRequest = request as Required<Pick<ModMessage, "action" | "requestID">> & ModMessage
+    void runRequest(platform.mods, mod.id, modRequest)
+      .then((value) => reply(event, { source: "opencode-host", requestID: modRequest.requestID, ok: true, value }))
       .catch((error) =>
         reply(event, {
           source: "opencode-host",
