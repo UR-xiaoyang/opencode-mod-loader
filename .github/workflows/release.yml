@@ -67,8 +67,9 @@ jobs:
         working-directory: opencode\packages\desktop
         run: |
           $env:OPENCODE_CHANNEL = "prod"
+          $env:NODE_OPTIONS = "--max-old-space-size=4096"
           bun run build
-          bun run package:win
+          bun run package:win -- --publish never
 
       - name: Prepare release assets
         shell: pwsh

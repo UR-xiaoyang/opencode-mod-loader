@@ -68,9 +68,10 @@ jobs:
         env:
           OPENCODE_CHANNEL: prod
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           bun run build
-          bun run package:${{ matrix.package }}
+          bun run package:${{ matrix.package }} -- --publish never
 
       - name: Collect installers
         shell: pwsh
