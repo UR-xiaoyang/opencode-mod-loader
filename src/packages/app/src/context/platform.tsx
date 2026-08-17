@@ -52,6 +52,7 @@ export type DesktopMod = {
     styles?: string
     host?: string
     server?: string
+    serverBootstrap?: string
     database?: { source: "production" }
   }
 }
@@ -59,7 +60,7 @@ export type DesktopMod = {
 export type DesktopModConflict = {
   modID: string
   modName: string
-  type: "sidebar" | "command" | "style" | "host" | "server" | "database"
+  type: "sidebar" | "command" | "style" | "host" | "server" | "server-bootstrap" | "database"
   detail: string
   certain: boolean
 }

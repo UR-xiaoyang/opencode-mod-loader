@@ -30,6 +30,9 @@ bun dev
 - `src/packages/app`: renderer integration, settings, sidebar, and trusted host MOD APIs.
 - `src/packages/desktop`: MOD discovery, permissions, IPC, preload APIs, and example MODs.
 - `src/packages/desktop/MODS.md`: manifest and MOD API documentation.
+- `docs/AI_MOD_DEVELOPMENT.md`: a Chinese, task-oriented guide for AI agents to build MODs without reading the loader source.
+- `src/packages/desktop/mods/parallel-conversations`: a server MOD that lets the primary model coordinate parallel child conversations.
+- `src/packages/desktop/mods/timeout-retry`: a server MOD that installs pre-server timeout diagnostics, retries timeout-aborted model requests, and increases Shell timeouts.
 
 ## Releases
 

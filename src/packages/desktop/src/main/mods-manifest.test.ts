@@ -63,6 +63,15 @@ describe("MOD manifest", () => {
         contributes: { server: "server.js" },
       }),
     ).toThrow("server.host")
+    expect(() =>
+      parseModManifest({
+        id: "example.mod",
+        name: "Example MOD",
+        version: "1.0.0",
+        entry: "index.html",
+        contributes: { serverBootstrap: "bootstrap.js" },
+      }),
+    ).toThrow("server.host")
     expect(
       parseModManifest({
         id: "example.mod",
@@ -73,6 +82,16 @@ describe("MOD manifest", () => {
         contributes: { server: "server.js" },
       }),
     ).toMatchObject({ contributes: { server: "server.js" } })
+    expect(
+      parseModManifest({
+        id: "example.mod",
+        name: "Example MOD",
+        version: "1.0.0",
+        entry: "index.html",
+        permissions: ["server.host"],
+        contributes: { serverBootstrap: "bootstrap.js" },
+      }),
+    ).toMatchObject({ contributes: { serverBootstrap: "bootstrap.js" } })
     expect(() =>
       parseModManifest({
         id: "example.mod",
@@ -132,6 +151,7 @@ describe("MOD manifest", () => {
         styles: "theme.css",
         host: "host.js",
         server: "server.js",
+        serverBootstrap: "bootstrap.js",
         database: { source: "production" },
       },
     })
@@ -147,6 +167,7 @@ describe("MOD manifest", () => {
       expect.objectContaining({ type: "style", certain: false }),
       expect.objectContaining({ type: "host", certain: false }),
       expect.objectContaining({ type: "server", certain: false }),
+      expect.objectContaining({ type: "server-bootstrap", certain: false }),
       expect.objectContaining({ type: "database", certain: true }),
     ])
   })

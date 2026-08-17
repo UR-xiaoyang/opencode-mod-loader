@@ -23,6 +23,7 @@ const SIDECAR_STOP_TIMEOUT = 6_000
 type SpawnLocalServerOptions = {
   userDataPath: string
   modPlugins?: string[]
+  modBootstraps?: string[]
   shareProductionDatabase?: boolean
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
@@ -138,6 +139,7 @@ export async function spawnLocalServer(
       password,
       userDataPath: options.userDataPath,
       modPlugins: options.modPlugins ?? [],
+      modBootstraps: options.modBootstraps ?? [],
       shareProductionDatabase: options.shareProductionDatabase === true,
     })
   }).catch((error) => {

@@ -1,0 +1,14 @@
+{
+  "id": "parallel-conversations",
+  "name": "Parallel Conversations",
+  "version": "0.1.0",
+  "description": "Lets the primary model delegate, monitor, and collect parallel child conversations.",
+  "engines": {
+    "opencode": "^1.18.0"
+  },
+  "permissions": ["server.host"],
+  "entry": "index.html",
+  "contributes": {
+    "server": "server.js"
+  }
+}

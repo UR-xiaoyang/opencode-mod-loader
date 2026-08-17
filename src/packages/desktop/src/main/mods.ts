@@ -41,12 +41,13 @@ type ConflictIndex = {
   style: Set<string>
   host: Set<string>
   server: Set<string>
+  serverBootstrap: Set<string>
   database: Set<string>
 }
 
 const maxManifestBytes = 1024 * 1024
 const reloadBatchSize = 16
-export const MOD_LOADER_VERSION = "0.1.1"
+export const MOD_LOADER_VERSION = "0.2.0"
 
 export function createModManager(version: string) {
   const installed = new Map<string, InstalledMod>()
@@ -58,6 +59,7 @@ export function createModManager(version: string) {
     style: new Set(),
     host: new Set(),
     server: new Set(),
+    serverBootstrap: new Set(),
     database: new Set(),
   }
 
@@ -189,6 +191,7 @@ export function createModManager(version: string) {
       ...(candidate.manifest.contributes?.styles ? conflictIndex.style : []),
       ...(candidate.manifest.contributes?.host ? conflictIndex.host : []),
       ...(candidate.manifest.contributes?.server ? conflictIndex.server : []),
+      ...(candidate.manifest.contributes?.serverBootstrap ? conflictIndex.serverBootstrap : []),
       ...(candidate.manifest.contributes?.database ? conflictIndex.database : []),
     ])
     ids.delete(id)
@@ -219,6 +222,7 @@ export function createModManager(version: string) {
     conflictIndex.style.clear()
     conflictIndex.host.clear()
     conflictIndex.server.clear()
+    conflictIndex.serverBootstrap.clear()
     conflictIndex.database.clear()
     if (safeMode()) return
     const enabled = new Set(enabledIDs())
@@ -229,6 +233,7 @@ export function createModManager(version: string) {
       if (mod.manifest.contributes?.styles) conflictIndex.style.add(mod.manifest.id)
       if (mod.manifest.contributes?.host) conflictIndex.host.add(mod.manifest.id)
       if (mod.manifest.contributes?.server) conflictIndex.server.add(mod.manifest.id)
+      if (mod.manifest.contributes?.serverBootstrap) conflictIndex.serverBootstrap.add(mod.manifest.id)
       if (mod.manifest.contributes?.database) conflictIndex.database.add(mod.manifest.id)
     })
   }
@@ -282,6 +287,24 @@ export function createModManager(version: string) {
           left.manifest.id.localeCompare(right.manifest.id),
       )
       .map((mod) => resolveModPath(mod.root, mod.manifest.contributes!.server!))
+  }
+
+  function serverBootstrapEntries() {
+    return [...installed.values()]
+      .filter(
+        (mod) =>
+          isEnabled(mod.manifest.id) &&
+          isModCompatible(mod.manifest.engines?.opencode, version) &&
+          mod.manifest.permissions.includes("server.host") &&
+          mod.manifest.contributes?.serverBootstrap,
+      )
+      .sort(
+        (left, right) =>
+          priorityFor(left.manifest.id) - priorityFor(right.manifest.id) ||
+          left.manifest.name.localeCompare(right.manifest.name) ||
+          left.manifest.id.localeCompare(right.manifest.id),
+      )
+      .map((mod) => resolveModPath(mod.root, mod.manifest.contributes!.serverBootstrap!))
   }
 
   function shareProductionDatabase() {
@@ -401,6 +424,7 @@ export function createModManager(version: string) {
     reload,
     list,
     serverEntries,
+    serverBootstrapEntries,
     shareProductionDatabase,
     safeMode,
     status,
@@ -430,6 +454,7 @@ async function loadMod(modRoot: string, id: string): Promise<InstalledMod> {
   if (manifest.contributes?.styles) resolveModPath(modRoot, manifest.contributes.styles)
   if (manifest.contributes?.host) resolveModPath(modRoot, manifest.contributes.host)
   if (manifest.contributes?.server) resolveModPath(modRoot, manifest.contributes.server)
+  if (manifest.contributes?.serverBootstrap) resolveModPath(modRoot, manifest.contributes.serverBootstrap)
   return { manifest, root: modRoot, realRoot: await realpath(modRoot) }
 }
 

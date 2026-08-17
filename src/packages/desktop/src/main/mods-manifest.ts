@@ -51,6 +51,7 @@ export type ModManifest = {
     styles?: string
     host?: string
     server?: string
+    serverBootstrap?: string
     database?: ModDatabaseContribution
   }
 }
@@ -66,7 +67,7 @@ export type PublicMod = Pick<ModManifest, "id" | "name" | "version" | "descripti
 export type ModConflict = {
   modID: string
   modName: string
-  type: "sidebar" | "command" | "style" | "host" | "server" | "database"
+  type: "sidebar" | "command" | "style" | "host" | "server" | "server-bootstrap" | "database"
   detail: string
   certain: boolean
 }
@@ -150,6 +151,12 @@ export function parseModManifest(value: unknown): ModManifest {
     throw new Error("Manifest server contribution must be a path")
   }
   if (
+    contributes?.serverBootstrap !== undefined &&
+    (typeof contributes.serverBootstrap !== "string" || !contributes.serverBootstrap.trim())
+  ) {
+    throw new Error("Manifest serverBootstrap contribution must be a path")
+  }
+  if (
     contributes?.database !== undefined &&
     (!contributes.database ||
       typeof contributes.database !== "object" ||
@@ -173,6 +180,9 @@ export function parseModManifest(value: unknown): ModManifest {
   }
   if (contributes?.server && !permissions.includes("server.host")) {
     throw new Error("Server contributions require server.host permission")
+  }
+  if (contributes?.serverBootstrap && !permissions.includes("server.host")) {
+    throw new Error("Server bootstrap contributions require server.host permission")
   }
   if (contributes?.database && !permissions.includes("server.database")) {
     throw new Error("Database contributions require server.database permission")
@@ -214,6 +224,7 @@ export function parseModManifest(value: unknown): ModManifest {
       styles: contributes?.styles as string | undefined,
       host: contributes?.host as string | undefined,
       server: contributes?.server as string | undefined,
+      serverBootstrap: contributes?.serverBootstrap as string | undefined,
       database: contributes?.database as ModDatabaseContribution | undefined,
     },
   }
@@ -272,11 +283,21 @@ export function findModConflicts(candidate: ModManifest, existing: ModManifest):
     candidate.contributes?.server && existing.contributes?.server
       ? [conflict("server", "Both MODs run trusted server plugins; their hooks can overlap.", false)]
       : []
+  const serverBootstrap =
+    candidate.contributes?.serverBootstrap && existing.contributes?.serverBootstrap
+      ? [
+          conflict(
+            "server-bootstrap",
+            "Both MODs install pre-server runtime code; the later MOD can replace the same global behavior.",
+            false,
+          ),
+        ]
+      : []
   const database =
     candidate.contributes?.database && existing.contributes?.database
       ? [conflict("database", "Both MODs select a shared session database.", true)]
       : []
-  return [...(sidebar ?? []), ...(commands ?? []), ...styles, ...host, ...server, ...database]
+  return [...(sidebar ?? []), ...(commands ?? []), ...styles, ...host, ...server, ...serverBootstrap, ...database]
 }
 
 function compareVersions(left: number[], right: number[]) {

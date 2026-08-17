@@ -44,7 +44,8 @@ mods/
     ],
     "styles": "theme.css",
     "host": "host.js",
-    "server": "server.js"
+    "server": "server.js",
+    "serverBootstrap": "bootstrap.js"
   }
 }
 ```
@@ -198,8 +199,11 @@ export default {
   async server() {
     return {
       "chat.retry": async (input, output) => {
-        if (!(input.error instanceof DOMException) || input.error.name !== "TimeoutError") return
-        output.retry = { message: "Request timed out; retrying" }
+        const message = input.error?.data?.message ?? input.error?.message ?? ""
+        if (!/aborted due to timeout/i.test(message)) return
+        output.retry = {
+          message: `Provider ${input.providerID} timed out; retry ${input.attempt + 1} starts shortly.`,
+        }
         output.delay = 1_000
       },
     }
@@ -215,6 +219,34 @@ changing built-in retry behavior.
 The Desktop app restarts when a server MOD is enabled, disabled, refreshed, or moved
 in load order. Server MODs only run against the local Desktop sidecar; WSL and remote
 servers keep their own extension boundaries.
+
+### Pre-server takeover
+
+`contributes.serverBootstrap` is a stronger `server.host` contribution. The loader
+executes it in MOD priority order after the sidecar environment is prepared and before
+the OpenCode server module is imported. Use it only when a normal plugin hook is too
+late, for example to install trusted transport diagnostics or a process-wide request
+wrapper.
+
+```js
+export default async function bootstrap(context) {
+  context.log("installing request diagnostics")
+  const previous = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    try {
+      return await previous(input, init)
+    } catch (error) {
+      context.log("request failed", { target: String(input), message: String(error) })
+      throw error
+    }
+  }
+}
+```
+
+The default export must be an async or synchronous function. A bootstrap runs once per
+sidecar start. It has no OpenCode server object yet, but it can install process-global
+behavior that the server will inherit. A bootstrap cannot bypass a user cancellation;
+keep retries and side effects explicit in a normal server hook.
 
 ## Shared production chats
 

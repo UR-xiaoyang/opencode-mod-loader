@@ -1,5 +1,6 @@
 import * as http from "node:http"
 import * as tls from "node:tls"
+import { pathToFileURL } from "node:url"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -17,6 +18,7 @@ type StartCommand = {
   password: string
   userDataPath: string
   modPlugins: string[]
+  modBootstraps: string[]
   shareProductionDatabase: boolean
 }
 
@@ -52,10 +54,17 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password, command.userDataPath, command.modPlugins, command.shareProductionDatabase)
+    prepareSidecarEnv(
+      command.password,
+      command.userDataPath,
+      command.modPlugins,
+      command.modBootstraps,
+      command.shareProductionDatabase,
+    )
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
+    await runModBootstraps(command.modBootstraps)
     const { Server } = await import("virtual:opencode-server")
 
     listener = await Server.listen({
@@ -86,6 +95,7 @@ function prepareSidecarEnv(
   password: string,
   userDataPath: string,
   modPlugins: string[],
+  modBootstraps: string[],
   shareProductionDatabase: boolean,
 ) {
   Object.assign(process.env, {
@@ -93,8 +103,25 @@ function prepareSidecarEnv(
     OPENCODE_SERVER_PASSWORD: password,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
     OPENCODE_DESKTOP_MOD_PLUGINS: JSON.stringify(modPlugins),
+    OPENCODE_DESKTOP_MOD_BOOTSTRAPS: JSON.stringify(modBootstraps),
   })
   if (shareProductionDatabase) process.env.OPENCODE_DISABLE_CHANNEL_DB = "1"
+}
+
+async function runModBootstraps(entries: string[]) {
+  for (const entry of entries) {
+    const module = await import(pathToFileURL(entry).href)
+    const bootstrap = module.default
+    if (typeof bootstrap !== "function") {
+      throw new Error(`Server bootstrap must default-export a function: ${entry}`)
+    }
+    await bootstrap({
+      phase: "before-server-import",
+      log: (message: string, details?: Record<string, unknown>) => {
+        console.info("[opencode-mod-bootstrap]", entry, message, details ?? "")
+      },
+    })
+  }
 }
 
 function ensureLoopbackNoProxy() {
@@ -146,6 +173,7 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
   if (typeof command.password !== "string") return
   if (typeof command.userDataPath !== "string") return
   if (!Array.isArray(command.modPlugins) || command.modPlugins.some((plugin) => typeof plugin !== "string")) return
+  if (!Array.isArray(command.modBootstraps) || command.modBootstraps.some((bootstrap) => typeof bootstrap !== "string")) return
   if (typeof command.shareProductionDatabase !== "boolean") return
   return {
     type: "start",
@@ -154,6 +182,7 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     password: command.password,
     userDataPath: command.userDataPath,
     modPlugins: command.modPlugins,
+    modBootstraps: command.modBootstraps,
     shareProductionDatabase: command.shareProductionDatabase,
   }
 }

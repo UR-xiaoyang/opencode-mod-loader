@@ -389,6 +389,7 @@ const main = Effect.gen(function* () {
       spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         modPlugins: mods.serverEntries(),
+        modBootstraps: mods.serverBootstrapEntries(),
         shareProductionDatabase: mods.shareProductionDatabase(),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
