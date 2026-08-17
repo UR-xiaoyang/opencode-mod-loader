@@ -18,6 +18,7 @@ export const SettingsModsV2: Component = () => {
   )
   const [debugListener] = createResource(() => platform.mods?.debugListener())
   const [debugModID, setDebugModID] = createSignal<string>()
+  const [copyStatus, setCopyStatus] = createSignal<string>()
   const modList = () => mods.latest ?? []
   const selectedDebugMod = () => modList().find((mod) => mod.id === debugModID())
   const visibleDiagnostics = () => {
@@ -39,10 +40,33 @@ export const SettingsModsV2: Component = () => {
   }
   const diagnosticTime = (updatedAt: number) =>
     new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(updatedAt)
+  const copyText = async (text: string, success: string) => {
+    try {
+      if (platform.writeClipboardText) {
+        await platform.writeClipboardText(text)
+      } else {
+        await navigator.clipboard.writeText(text)
+      }
+      setCopyStatus(success)
+    } catch {
+      setCopyStatus("Copy failed")
+    }
+    window.setTimeout(() => setCopyStatus(undefined), 2_000)
+  }
   const copyDebugListener = () => {
     const listener = debugListener.latest
     if (!listener) return
-    void navigator.clipboard.writeText(`${listener.url}/events?token=${listener.token}`)
+    void copyText(`${listener.url}/events?token=${listener.token}`, "Listener copied")
+  }
+  const copyDiagnostics = () => {
+    const text = visibleDiagnostics()
+      .map(
+        (event) =>
+          `[${new Date(event.updatedAt).toISOString()}] ${event.status.toUpperCase()} ${event.id} ${event.phase}: ${event.message}`,
+      )
+      .join("\n")
+    if (!text) return
+    void copyText(text, "Logs copied")
   }
 
   const applyChange = (mod: DesktopMod) => {
@@ -219,7 +243,15 @@ export const SettingsModsV2: Component = () => {
                 All MODs
               </ButtonV2>
               <ButtonV2 size="small" variant="neutral" disabled={!debugListener.latest} onClick={copyDebugListener}>
-                Copy listener
+                {copyStatus() === "Listener copied" ? copyStatus() : "Copy listener"}
+              </ButtonV2>
+              <ButtonV2
+                size="small"
+                variant="neutral"
+                disabled={!visibleDiagnostics().length}
+                onClick={copyDiagnostics}
+              >
+                {copyStatus() === "Logs copied" ? copyStatus() : "Copy logs"}
               </ButtonV2>
               <ButtonV2 size="small" variant="neutral" onClick={() => void refetchDiagnostics()}>
                 Refresh
@@ -236,6 +268,9 @@ export const SettingsModsV2: Component = () => {
               </ButtonV2>
             </div>
           </div>
+          <Show when={copyStatus() === "Copy failed"}>
+            <div class="settings-v2-servers-status">Could not copy to the system clipboard.</div>
+          </Show>
           <Show
             when={visibleDiagnostics().length}
             fallback={

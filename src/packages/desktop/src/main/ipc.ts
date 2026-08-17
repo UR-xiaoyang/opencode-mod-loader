@@ -362,6 +362,10 @@ export function registerIpcHandlers(deps: Deps) {
     const size = image.getSize()
     return { buffer, width: size.width, height: size.height }
   })
+  ipcMain.handle("write-clipboard-text", (_event: IpcMainInvokeEvent, text: string) => {
+    if (typeof text !== "string") throw new Error("Clipboard text must be a string")
+    clipboard.writeText(text)
+  })
 
   ipcMain.handle("get-window-id", (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)

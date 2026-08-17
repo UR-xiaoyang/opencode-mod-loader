@@ -316,6 +316,8 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
         type: "image/png",
       })
     },
+
+    writeClipboardText: (text) => window.api.writeClipboardText(text),
   }
 }
 
