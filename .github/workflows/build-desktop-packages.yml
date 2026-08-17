@@ -6,7 +6,7 @@ on:
       version:
         description: MOD Loader release version without the v prefix; the OpenCode version is appended automatically
         required: true
-        default: "0.1.1"
+        default: "0.2.0"
 
 permissions:
   contents: write
