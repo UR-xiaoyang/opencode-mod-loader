@@ -53,6 +53,7 @@ type Deps = {
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
   mods: ReturnType<typeof createModManager>
+  modsDebugListener: () => { url: string; token: string }
   setNativeTranslations: (bundle: DesktopNativeBundle) => void
 }
 
@@ -107,6 +108,9 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("mods-list", () => deps.mods.list())
   ipcMain.handle("mods-safe-mode", () => deps.mods.safeMode())
   ipcMain.handle("mods-status", () => deps.mods.status())
+  ipcMain.handle("mods-diagnostic-history", () => deps.mods.diagnosticHistory())
+  ipcMain.handle("mods-clear-diagnostic-history", () => deps.mods.clearDiagnosticHistory())
+  ipcMain.handle("mods-debug-listener", () => deps.modsDebugListener())
   ipcMain.handle("mods-set-safe-mode", (_event: IpcMainInvokeEvent, enabled: boolean) => {
     deps.mods.setSafeMode(enabled)
     return deps.mods.list()
@@ -129,6 +133,25 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("mods-open-window", (_event: IpcMainInvokeEvent, id: string) => deps.mods.openWindow(id))
   ipcMain.handle("mods-open-folder", () => deps.mods.openFolder())
+  ipcMain.handle(
+    "mods-report-runtime",
+    (
+      _event: IpcMainInvokeEvent,
+      id: string,
+      phase: "sidebar" | "style" | "host" | "trigger",
+      status: "ready" | "error",
+      message: string,
+    ) => {
+      if (
+        !["sidebar", "style", "host", "trigger"].includes(phase) ||
+        !["ready", "error"].includes(status) ||
+        typeof message !== "string"
+      ) {
+        throw new Error("Invalid MOD diagnostic")
+      }
+      deps.mods.reportDiagnostic(id, phase, status, message)
+    },
+  )
   ipcMain.handle("mods-storage-get", (_event: IpcMainInvokeEvent, id: string, key: string) => {
     deps.mods.manifestForID(id)
     if (!deps.mods.hasPermissionForID(id, "storage")) throw new Error("MOD does not have storage permission")

@@ -49,6 +49,7 @@ import { migrate } from "./migrate"
 import { cleanupStoreFiles } from "./store-cleanup"
 import { startBackgroundCli } from "./background-cli"
 import { createModManager, registerModProtocol } from "./mods"
+import { startModDebugListener } from "./mods-debug-listener"
 import { setNativeTranslations } from "./native-translations"
 
 const APP_NAMES: Record<string, string> = {
@@ -273,6 +274,38 @@ const main = Effect.gen(function* () {
   registerRendererProtocol()
   const mods = createModManager(app.getVersion())
   yield* Effect.promise(() => mods.reload())
+  const modDebugListener = yield* Effect.promise(() =>
+    startModDebugListener(mods, {
+      trigger: async (request) => {
+        if (request.action === "open-window") {
+          mods.reportDiagnostic(request.id, "trigger", "pending", "Opening MOD window as a debug test.")
+          try {
+            await mods.openWindow(request.id)
+            return { message: "MOD window test was triggered." }
+          } catch (error) {
+            mods.reportDiagnostic(
+              request.id,
+              "trigger",
+              "error",
+              error instanceof Error ? error.message : "Unable to open MOD window.",
+            )
+            throw error
+          }
+        }
+        const mod = mods.manifestForID(request.id)
+        if (!mod.manifest.permissions.includes("ui.host") || !mod.manifest.contributes?.host) {
+          throw new Error("MOD does not provide a trusted host script for debug actions")
+        }
+        const targets = BrowserWindow.getAllWindows()
+        if (targets.length === 0) throw new Error("No OpenCode renderer is available for this debug action")
+        mods.reportDiagnostic(request.id, "trigger", "pending", `Running host debug action "${request.name}".`)
+        targets.forEach((win) => win.webContents.send("mods-debug-trigger", request))
+        return { message: `Host debug action "${request.name}" was triggered.` }
+      },
+    }),
+  )
+  logger.log("MOD debug listener started", { url: modDebugListener.url })
+  app.once("will-quit", () => void modDebugListener.close())
   registerModProtocol(mods)
   globalShortcut.register("CommandOrControl+Shift+Alt+M", () => {
     mods.setSafeMode(!mods.safeMode())
@@ -317,6 +350,7 @@ const main = Effect.gen(function* () {
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
     mods,
+    modsDebugListener: () => ({ url: modDebugListener.url, token: modDebugListener.token }),
     setNativeTranslations: (bundle) => {
       if (setNativeTranslations(bundle)) createMenu(menuDeps)
     },
@@ -394,6 +428,12 @@ const main = Effect.gen(function* () {
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
+        onModDiagnostic: (entry, phase, status, message) => {
+          const id = mods.modIDForRuntimeEntry(entry, phase)
+          if (!id) return
+          mods.reportDiagnostic(id, phase, status, message)
+          writeLog("server", "MOD runtime diagnostic", { id, phase, status, message }, status === "error" ? "error" : "info")
+        },
       }),
     )
     server = listener

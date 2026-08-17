@@ -53,6 +53,52 @@ mods/
 Use the command palette to refresh MODs, enable or disable them, and open an enabled
 MOD window. A disabled or incompatible MOD cannot run.
 
+## Runtime diagnostics
+
+Settings > MODs includes a separate MOD Debug Console and shows the latest runtime
+diagnostic in each MOD row. The console keeps the most recent 300 events for the
+current app session and refreshes while that page is open. It distinguishes a valid
+manifest from a contribution that actually loaded: MOD windows and sidebar panels
+report their document load result; stylesheets and trusted host scripts report their
+load result; server bootstraps report completion before the server import; and server
+plugins report that the sidecar started with them enabled. An error includes the
+latest safe failure message.
+
+Use this as a quick execution check, then use `Export debug logs` for full sidecar
+output and application logs. A successful server-plugin startup only proves that the
+sidecar accepted the plugin; it cannot prove that an event hook will be called until
+the relevant OpenCode action is exercised.
+
+## Debug listener
+
+The `Copy listener` control in Settings > MODs > MOD Debug Console copies a
+token-protected local Server-Sent Events endpoint. It binds only to `127.0.0.1` on a
+random port and changes every app launch. A local debugging agent can connect to the
+copied URL to receive a `snapshot` event with the current history, followed by one
+`diagnostic` event per MOD runtime update.
+
+The same listener accepts `GET /diagnostics?token=<token>` for a JSON history snapshot.
+The token may alternatively be supplied with `Authorization: Bearer <token>`. Do not
+share the copied endpoint or token: it grants local access to MOD diagnostic messages.
+
+The listener also accepts `POST /trigger?token=<token>` with JSON. Use
+`{ "id": "example.mod", "action": "open-window" }` to open an enabled MOD window as
+a load test. Trusted host MODs can expose named functional probes:
+
+```js
+const mod = window.opencodeHost.forScript()
+
+mod.debug.register("refresh-cache", async (input) => {
+  await refreshCache(input)
+})
+```
+
+Call a registered probe with
+`{ "id": "example.mod", "action": "host", "name": "refresh-cache", "input": {} }`.
+The trigger request returns once accepted; its `pending`, `ready`, or `error` result
+is sent through the diagnostic event stream. Only enabled, compatible MODs with a
+declared `ui.host` contribution can receive host triggers.
+
 ## Load priority and conflicts
 
 Every MOD has a persisted load priority, initially `0`. The loader applies MODs from

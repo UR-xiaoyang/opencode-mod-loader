@@ -20,6 +20,7 @@ type ModMessage = {
 
 type HostRuntime = {
   dispose: Set<() => void>
+  debug: Map<string, (input: unknown) => void | Promise<void>>
   host: NonNullable<Window["opencodeHost"]>["forMod"] extends (id: string) => infer Value ? Value : never
 }
 
@@ -39,6 +40,9 @@ declare global {
         events: {
           emit: (type: string, detail?: unknown) => void
           on: (type: string, listener: EventListener) => () => void
+        }
+        debug: {
+          register: (name: string, action: (input: unknown) => void | Promise<void>) => () => void
         }
         storage: {
           get: (key: string) => Promise<string | null>
@@ -62,6 +66,9 @@ declare global {
         events: {
           emit: (type: string, detail?: unknown) => void
           on: (type: string, listener: EventListener) => () => void
+        }
+        debug: {
+          register: (name: string, action: (input: unknown) => void | Promise<void>) => () => void
         }
         storage: {
           get: (key: string) => Promise<string | null>
@@ -129,9 +136,35 @@ export function ModHostScripts() {
   window.opencodeHost = host
   command.register("mods-host", commands)
 
+  const runDebugAction = async (trigger: { id: string; action: "host"; name: string; input?: unknown }) => {
+    const runtime = runtimes.get(trigger.id)
+    if (!runtime) {
+      void platform.mods?.reportRuntime(trigger.id, "trigger", "error", "MOD host runtime is not active.")
+      return
+    }
+    const action = runtime.debug.get(trigger.name)
+    if (!action) {
+      void platform.mods?.reportRuntime(trigger.id, "trigger", "error", `Host debug action "${trigger.name}" is not registered.`)
+      return
+    }
+    try {
+      await action(trigger.input)
+      void platform.mods?.reportRuntime(trigger.id, "trigger", "ready", `Host debug action "${trigger.name}" completed.`)
+    } catch (error) {
+      void platform.mods?.reportRuntime(
+        trigger.id,
+        "trigger",
+        "error",
+        error instanceof Error ? error.message : `Host debug action "${trigger.name}" failed.`,
+      )
+    }
+  }
+  const unsubscribeDebugTrigger = window.api?.onModDebugTrigger((trigger) => void runDebugAction(trigger))
+
   const refresh = () => void refetch()
   window.addEventListener("opencode:mods-changed", refresh)
   onCleanup(() => {
+    unsubscribeDebugTrigger?.()
     window.removeEventListener("opencode:mods-changed", refresh)
     scripts.forEach((script) => script.remove())
     runtimes.forEach((runtime) => runtime.dispose.forEach((dispose) => dispose()))
@@ -161,8 +194,10 @@ export function ModHostScripts() {
           dispose.delete(cleanup)
         }
       }
+      const debug = new Map<string, (input: unknown) => void | Promise<void>>()
       runtimes.set(id, {
         dispose,
+        debug,
         host: {
           id,
           commands: {
@@ -204,6 +239,13 @@ export function ModHostScripts() {
               return track(() => window.removeEventListener(type, listener))
             },
           },
+          debug: {
+            register: (name, action) => {
+              if (!name.trim()) throw new Error("MOD host debug action name is required")
+              debug.set(name, action)
+              return track(() => debug.delete(name))
+            },
+          },
           storage: {
             get: (key) => platform.mods?.storageGet(id, key) ?? Promise.reject(new Error("MOD storage is unavailable")),
             set: (key, value) =>
@@ -222,8 +264,16 @@ export function ModHostScripts() {
       script.async = false
       script.dataset.opencodeModHostScript = id
       script.addEventListener(
+        "load",
+        () => {
+          void platform.mods?.reportRuntime(id, "host", "ready", "Host script loaded.")
+        },
+        { once: true },
+      )
+      script.addEventListener(
         "error",
         () => {
+          void platform.mods?.reportRuntime(id, "host", "error", "Host script failed to load or execute.")
           script.remove()
           scripts.delete(id)
           runtimes.get(id)?.dispose.forEach((dispose) => dispose())
@@ -255,7 +305,15 @@ export function ModStyles() {
 
   return (
     <For each={styles()}>
-      {(style) => <link data-opencode-mod-style={style.id} rel="stylesheet" href={style.href} />}
+      {(style) => (
+        <link
+          data-opencode-mod-style={style.id}
+          rel="stylesheet"
+          href={style.href}
+          onLoad={() => void platform.mods?.reportRuntime(style.id, "style", "ready", "Stylesheet loaded.")}
+          onError={() => void platform.mods?.reportRuntime(style.id, "style", "error", "Stylesheet failed to load.")}
+        />
+      )}
     </For>
   )
 }
@@ -353,6 +411,12 @@ export function ModSidebarPanel(props: { panel: ModPanel }) {
         class="h-full w-full border-0 bg-background-base"
         sandbox="allow-scripts"
         src={panel() ? modURL(props.panel.modID, panel()!.panel.entry) : undefined}
+        onLoad={() =>
+          void platform.mods?.reportRuntime(props.panel.modID, "sidebar", "ready", "Sidebar panel finished loading.")
+        }
+        onError={() =>
+          void platform.mods?.reportRuntime(props.panel.modID, "sidebar", "error", "Sidebar panel failed to load.")
+        }
       />
     </div>
   )

@@ -46,6 +46,12 @@ export type DesktopMod = {
   enabled: boolean
   compatible: boolean
   error?: string
+  diagnostic?: {
+    phase: "manifest" | "enabled" | "window" | "sidebar" | "style" | "host" | "server" | "server-bootstrap" | "trigger"
+    status: "ready" | "pending" | "error" | "disabled"
+    message: string
+    updatedAt: number
+  }
   contributes?: {
     sidebar?: { id: string; title: string; entry: string; order?: number }[]
     commands?: { id: string; title: string; description?: string; panel?: string }[]
@@ -56,6 +62,7 @@ export type DesktopMod = {
     database?: { source: "production" }
   }
 }
+export type DesktopModDiagnosticEvent = NonNullable<DesktopMod["diagnostic"]> & { id: string }
 
 export type DesktopModConflict = {
   modID: string
@@ -164,6 +171,9 @@ type PlatformBase = {
     list(): Promise<DesktopMod[]>
     safeMode(): Promise<boolean>
     status(): Promise<{ version: string; enabled: boolean }>
+    diagnosticHistory(): Promise<DesktopModDiagnosticEvent[]>
+    clearDiagnosticHistory(): Promise<void>
+    debugListener(): Promise<{ url: string; token: string }>
     setSafeMode(enabled: boolean): Promise<DesktopMod[]>
     reload(): Promise<DesktopMod[]>
     preload(id: string): Promise<{ mod: DesktopMod; conflicts: DesktopModConflict[]; directory: string }>
@@ -171,6 +181,12 @@ type PlatformBase = {
     setPriority(id: string, priority: number): Promise<DesktopMod[]>
     openWindow(id: string): Promise<void>
     openFolder(): Promise<string>
+    reportRuntime(
+      id: string,
+      phase: "sidebar" | "style" | "host" | "trigger",
+      status: "ready" | "error",
+      message: string,
+    ): Promise<void>
     storageGet(id: string, key: string): Promise<string | null>
     storageSet(id: string, key: string, value: string): Promise<void>
     storageDelete(id: string, key: string): Promise<void>

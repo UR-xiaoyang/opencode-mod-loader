@@ -28,6 +28,7 @@ type SidecarCommand = StartCommand | StopCommand
 type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
+  | { type: "mod-diagnostic"; entry: string; phase: "server" | "server-bootstrap"; status: "ready" | "error"; message: string }
   | { type: "error"; error: { message: string; stack?: string } }
 
 type ParentPort = {
@@ -74,6 +75,15 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
+    command.modPlugins.forEach((entry) =>
+      parentPort.postMessage({
+        type: "mod-diagnostic",
+        entry,
+        phase: "server",
+        status: "ready",
+        message: "Sidecar started with this server plugin enabled.",
+      }),
+    )
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -110,17 +120,35 @@ function prepareSidecarEnv(
 
 async function runModBootstraps(entries: string[]) {
   for (const entry of entries) {
-    const module = await import(pathToFileURL(entry).href)
-    const bootstrap = module.default
-    if (typeof bootstrap !== "function") {
-      throw new Error(`Server bootstrap must default-export a function: ${entry}`)
+    try {
+      const module = await import(pathToFileURL(entry).href)
+      const bootstrap = module.default
+      if (typeof bootstrap !== "function") {
+        throw new Error(`Server bootstrap must default-export a function: ${entry}`)
+      }
+      await bootstrap({
+        phase: "before-server-import",
+        log: (message: string, details?: Record<string, unknown>) => {
+          console.info("[opencode-mod-bootstrap]", entry, message, details ?? "")
+        },
+      })
+      parentPort.postMessage({
+        type: "mod-diagnostic",
+        entry,
+        phase: "server-bootstrap",
+        status: "ready",
+        message: "Bootstrap completed before the server module was imported.",
+      })
+    } catch (error) {
+      parentPort.postMessage({
+        type: "mod-diagnostic",
+        entry,
+        phase: "server-bootstrap",
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      })
+      throw error
     }
-    await bootstrap({
-      phase: "before-server-import",
-      log: (message: string, details?: Record<string, unknown>) => {
-        console.info("[opencode-mod-bootstrap]", entry, message, details ?? "")
-      },
-    })
   }
 }
 

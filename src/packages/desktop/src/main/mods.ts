@@ -10,6 +10,8 @@ import {
   parseModManifest,
   resolveModPath,
   type ModConflict,
+  type ModDiagnostic,
+  type ModDiagnosticEvent,
   type ModManifest,
   type PublicMod,
 } from "./mods-manifest"
@@ -47,11 +49,15 @@ type ConflictIndex = {
 
 const maxManifestBytes = 1024 * 1024
 const reloadBatchSize = 16
+const maxDiagnosticEvents = 300
 export const MOD_LOADER_VERSION = "0.2.0"
 
 export function createModManager(version: string) {
   const installed = new Map<string, InstalledMod>()
   const failures = new Map<string, string>()
+  const diagnostics = new Map<string, ModDiagnostic>()
+  const diagnosticEvents: ModDiagnosticEvent[] = []
+  const diagnosticListeners = new Set<(event: ModDiagnosticEvent) => void>()
   const windows = new Map<number, string>()
   const conflictIndex: ConflictIndex = {
     sidebar: new Map(),
@@ -111,6 +117,12 @@ export function createModManager(version: string) {
     }
     const ids = enabledIDs().filter((item) => item !== id)
     getStore().set(ENABLED_MODS_KEY, enabled ? [...ids, id] : ids)
+    reportDiagnostic(
+      id,
+      "enabled",
+      enabled ? "pending" : "disabled",
+      enabled ? "Enabled; waiting for its declared contributions to run." : "Disabled.",
+    )
     rebuildConflictIndex()
     if (!enabled) {
       for (const [webContentsID, modID] of windows) {
@@ -145,6 +157,7 @@ export function createModManager(version: string) {
     getStore().set(MODS_SAFE_MODE_KEY, enabled)
     rebuildConflictIndex()
     if (!enabled) return
+    installed.forEach((mod) => reportDiagnostic(mod.manifest.id, "enabled", "disabled", "Disabled by Safe Mode."))
     BrowserWindow.getAllWindows()
       .filter((win) => windows.has(win.webContents.id))
       .forEach((win) => win.close())
@@ -166,8 +179,15 @@ export function createModManager(version: string) {
           try {
             const mod = await loadMod(modRoot, entry.name)
             nextInstalled.set(mod.manifest.id, mod)
+            recordDiagnostic(mod.manifest.id, "manifest", "ready", "Manifest and declared local files are valid.")
           } catch (error) {
             nextFailures.set(entry.name, error instanceof Error ? error.message : "Unable to read MOD manifest")
+            recordDiagnostic(
+              entry.name,
+              "manifest",
+              "error",
+              error instanceof Error ? error.message : "Unable to read MOD manifest",
+            )
           }
         }),
       )
@@ -250,6 +270,7 @@ export function createModManager(version: string) {
         enabled: false,
         compatible: false,
         error,
+        diagnostic: diagnostics.get(id),
       })),
     ].sort(
       (left, right) =>
@@ -268,7 +289,48 @@ export function createModManager(version: string) {
       enabled: isEnabled(mod.manifest.id),
       compatible: isModCompatible(mod.manifest.engines?.opencode, version),
       contributes: mod.manifest.contributes,
+      diagnostic: diagnostics.get(mod.manifest.id),
     }
+  }
+
+  function reportDiagnostic(
+    id: string,
+    phase: ModDiagnostic["phase"],
+    status: ModDiagnostic["status"],
+    message: string,
+  ) {
+    if (!installed.has(id) && !failures.has(id)) return
+    recordDiagnostic(id, phase, status, message)
+  }
+
+  function recordDiagnostic(
+    id: string,
+    phase: ModDiagnostic["phase"],
+    status: ModDiagnostic["status"],
+    message: string,
+  ) {
+    const event = { id, phase, status, message: message.slice(0, 1000), updatedAt: Date.now() }
+    diagnostics.set(id, event)
+    diagnosticEvents.push(event)
+    if (diagnosticEvents.length > maxDiagnosticEvents) diagnosticEvents.splice(0, diagnosticEvents.length - maxDiagnosticEvents)
+    diagnosticListeners.forEach((listener) => {
+      try {
+        listener(event)
+      } catch {}
+    })
+  }
+
+  function diagnosticHistory() {
+    return [...diagnosticEvents].reverse()
+  }
+
+  function clearDiagnosticHistory() {
+    diagnosticEvents.length = 0
+  }
+
+  function subscribeDiagnostics(listener: (event: ModDiagnosticEvent) => void) {
+    diagnosticListeners.add(listener)
+    return () => diagnosticListeners.delete(listener)
   }
 
   function serverEntries() {
@@ -305,6 +367,13 @@ export function createModManager(version: string) {
           left.manifest.id.localeCompare(right.manifest.id),
       )
       .map((mod) => resolveModPath(mod.root, mod.manifest.contributes!.serverBootstrap!))
+  }
+
+  function modIDForRuntimeEntry(entry: string, phase: "server" | "server-bootstrap") {
+    return [...installed.values()].find((mod) => {
+      const target = phase === "server" ? mod.manifest.contributes?.server : mod.manifest.contributes?.serverBootstrap
+      return target && resolveModPath(mod.root, target) === entry
+    })?.manifest.id
   }
 
   function shareProductionDatabase() {
@@ -350,6 +419,16 @@ export function createModManager(version: string) {
     })
     windows.set(win.webContents.id, id)
     win.once("closed", () => windows.delete(win.webContents.id))
+    win.webContents.once("did-finish-load", () =>
+      reportDiagnostic(id, "window", "ready", "MOD window finished loading."),
+    )
+    win.webContents.once("did-fail-load", (_event, _code, description) =>
+      reportDiagnostic(id, "window", "error", `MOD window failed to load: ${description}`),
+    )
+    win.webContents.on("console-message", (_event, level, message, line, sourceID) => {
+      if (level < 2) return
+      reportDiagnostic(id, "window", "error", `Console error at ${sourceID}:${line}: ${message}`)
+    })
     win.webContents.setWindowOpenHandler(({ url }) => {
       if (hasPermission(win.webContents.id, "external.open") && isHttpUrl(url)) void shell.openExternal(url)
       return { action: "deny" }
@@ -425,12 +504,17 @@ export function createModManager(version: string) {
     list,
     serverEntries,
     serverBootstrapEntries,
+    modIDForRuntimeEntry,
     shareProductionDatabase,
     safeMode,
     status,
     setSafeMode,
     setEnabled,
     setPriority,
+    reportDiagnostic,
+    diagnosticHistory,
+    clearDiagnosticHistory,
+    subscribeDiagnostics,
     preload,
     openWindow,
     openFolder: () => shell.openPath(modsDirectory()),

@@ -90,6 +90,11 @@ const api: ElectronAPI = {
     ipcRenderer.on("deep-link", handler)
     return () => ipcRenderer.removeListener("deep-link", handler)
   },
+  onModDebugTrigger: (cb) => {
+    const handler = (_: unknown, trigger: { id: string; action: "host"; name: string; input?: unknown }) => cb(trigger)
+    ipcRenderer.on("mods-debug-trigger", handler)
+    return () => ipcRenderer.removeListener("mods-debug-trigger", handler)
+  },
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),
   openFilePicker: (opts) => ipcRenderer.invoke("open-file-picker", opts),
@@ -136,6 +141,9 @@ const api: ElectronAPI = {
     list: () => ipcRenderer.invoke("mods-list"),
     safeMode: () => ipcRenderer.invoke("mods-safe-mode"),
     status: () => ipcRenderer.invoke("mods-status"),
+    diagnosticHistory: () => ipcRenderer.invoke("mods-diagnostic-history"),
+    clearDiagnosticHistory: () => ipcRenderer.invoke("mods-clear-diagnostic-history"),
+    debugListener: () => ipcRenderer.invoke("mods-debug-listener"),
     setSafeMode: (enabled) => ipcRenderer.invoke("mods-set-safe-mode", enabled),
     reload: () => ipcRenderer.invoke("mods-reload"),
     preload: (id) => ipcRenderer.invoke("mods-preload", id),
@@ -143,6 +151,7 @@ const api: ElectronAPI = {
     setPriority: (id, priority) => ipcRenderer.invoke("mods-set-priority", id, priority),
     openWindow: (id) => ipcRenderer.invoke("mods-open-window", id),
     openFolder: () => ipcRenderer.invoke("mods-open-folder"),
+    reportRuntime: (id, phase, status, message) => ipcRenderer.invoke("mods-report-runtime", id, phase, status, message),
     storageGet: (id, key) => ipcRenderer.invoke("mods-storage-get", id, key),
     storageSet: (id, key, value) => ipcRenderer.invoke("mods-storage-set", id, key, value),
     storageDelete: (id, key) => ipcRenderer.invoke("mods-storage-delete", id, key),

@@ -44,7 +44,21 @@
 3. 创建 `mod.json`，所有路径均相对 MOD 根目录，且不得以 `../` 跳出目录。
 4. 创建清单中引用的本地 HTML、JS、CSS 文件。页面脚本使用普通浏览器 JavaScript；不要写 TypeScript，加载器不会编译它。
 5. 刷新 MOD 列表并启用该 MOD。若出现冲突，优先改用唯一的侧栏和命令 ID；仅 CSS、host 或 server 行为的重叠才考虑调整加载优先级。
-6. 验收具体功能，再刷新、禁用、重新启用一次，确认状态和清理行为正常。
+6. 在 **Settings > MODs > MOD Debug Console** 查看本次应用会话的完整事件流，并在每个 MOD 行查看其最新 Debug 状态。它会分别报告清单校验、窗口/侧栏/样式/host 脚本的实际加载，以及 server 和 serverBootstrap 的 sidecar 启动状态。
+7. 验收具体功能，再刷新、禁用、重新启用一次，确认状态和清理行为正常。server 插件显示启动成功仅代表 sidecar 已接纳它；仍需执行对应聊天或工具操作来验证 hook 的业务逻辑。
+
+需要由本地调试代理持续观察时，在 Debug Console 使用 **Copy listener**。该地址只监听本机 `127.0.0.1`，并带有每次启动随机生成的令牌；代理连接后先收到历史快照，再持续收到 MOD 诊断事件。
+
+调试代理还可对该监听地址发送 `POST /trigger` 来执行验收动作。`{ "id": "你的.mod", "action": "open-window" }` 可验证 MOD 窗口是否能真正打开。对于已声明 `ui.host` 的受信任 Host MOD，可注册具名探针：
+
+```js
+const mod = window.opencodeHost.forScript()
+mod.debug.register("verify-feature", async (input) => {
+  await runFeatureCheck(input)
+})
+```
+
+随后发送 `{ "id": "你的.mod", "action": "host", "name": "verify-feature", "input": {} }`。触发请求表示已受理；最终成功或异常会以 `trigger` 事件写入 Debug 流。
 
 ## 最小可用模板
 
@@ -271,6 +285,32 @@ export default {
 
 启用、禁用、刷新或调整这类 MOD 的优先级会重启 Desktop sidecar。它只影响本地 Desktop sidecar，不影响 WSL 或远程服务器。
 
+### 全链路日志追踪
+
+仓库中的 `src/packages/desktop/mods/opencode.full-chain-trace` 是一个服务端追踪示例。它会以 JSON 行输出聊天接收、模型参数和请求头准备、工具前后、重试、文本完成和上下文压缩；其 pre-server bootstrap 还会记录所有由 sidecar 发出的 HTTP 请求。
+
+每条业务事件带有 `trace`、`session` 和 `elapsedMs`。工具事件还带有 `callID` 和 `durationMs`，HTTP 事件带有独立的 `requestID` 和 `durationMs`。该示例默认不记录提示词、响应正文、请求头值、工具参数或工具输出，只记录名称、键名、长度和经过去查询参数的 URL。
+
+`serverBootstrap` 能包装进程级行为，和其他安装同类包装的 MOD 可能冲突；启用时请检查 MOD 冲突提示，并将其加载优先级设为明确的值。
+
+### Agent Council 圆桌讨论
+
+仓库中的 `src/packages/desktop/mods/parallel-conversations` 是一个以并行会话实现的圆桌讨论 MOD。它注册 `agent_council` 工具给主模型调用，而不是把成员作为一次性子任务派出。每个成员都有独立 OpenCode 会话、角色提示词和可选的模型覆盖；每轮成员会并行发言，下一轮收到统一的会议记录。
+
+让主模型调用该工具时，至少提供两个 `members`，每个成员都要有不同的 `name` 和 `prompt`。`model` 可省略，省略时复用当前会话模型；若要使用不同模型，填入 OpenCode 的 `providerID` 和 `modelID`。`rounds` 建议为 `2`，`moderator_prompt` 应写清楚评估标准和希望交付的决策形式。
+
+```text
+请用 agent_council 召开两轮方案评审。
+议题是为本项目选择离线优先同步架构。
+创建三个成员：系统架构师、可靠性审稿人、产品负责人。
+让他们分别从演进成本、故障恢复和用户体验角度审议，
+最后基于会议记录给我一份带取舍理由的推荐方案。
+```
+
+圆桌成员不会执行文件修改、shell 命令或其他工具调用。主模型负责在会议结束后判断观点质量、处理分歧，并向用户给出结论。
+
+该 MOD 还带有聊天页内的配置面板。启用后可在聊天标题栏点击 `Agent Council`，或从命令面板选择 `Open Agent Council`；填写议题、主持规则、轮数和成员席位后，面板会把结构化的 `agent_council` 请求写入当前聊天输入框。用户确认内容并正常发送，仍由主模型决定何时实际调用工具。
+
 ### 共享生产会话数据库
 
 这是开发安装专用的声明式功能，不可指定任意数据库路径：
@@ -313,4 +353,5 @@ export default {
 - [ ] `ui.sidebar`、`ui.command`、`ui.style`、`ui.host`、`server.host`、`server.database` 均已声明对应权限；`serverBootstrap` 也需要 `server.host`。
 - [ ] 侧栏和命令 ID 带唯一前缀，并检查了与已启用 MOD 的冲突。
 - [ ] 已在 Settings > MODs 中刷新、启用并验证用户需求。
+- [ ] 已检查 Settings > MODs 中的 Debug 状态；若有异常，已通过 `Export debug logs` 定位具体错误。
 - [ ] 已验证禁用后不再生效；若使用 storage，则重启后数据符合预期。

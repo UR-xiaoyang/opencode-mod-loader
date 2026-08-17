@@ -1,8 +1,8 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Switch } from "@opencode-ai/ui/switch"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { For, Show, createResource, type Component } from "solid-js"
-import { usePlatform, type DesktopMod } from "@/context/platform"
+import { For, Show, createResource, createSignal, onCleanup, type Component } from "solid-js"
+import { usePlatform, type DesktopMod, type DesktopModDiagnosticEvent } from "@/context/platform"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { DialogModConflictV2 } from "./dialog-mod-conflict-v2"
@@ -12,7 +12,38 @@ export const SettingsModsV2: Component = () => {
   const dialog = useDialog()
   const [mods, { refetch }] = createResource(() => platform.mods?.list(), { initialValue: [] as DesktopMod[] })
   const [safeMode, { refetch: refetchSafeMode }] = createResource(() => platform.mods?.safeMode(), { initialValue: false })
+  const [diagnostics, { refetch: refetchDiagnostics }] = createResource(
+    () => platform.mods?.diagnosticHistory(),
+    { initialValue: [] as DesktopModDiagnosticEvent[] },
+  )
+  const [debugListener] = createResource(() => platform.mods?.debugListener())
+  const [debugModID, setDebugModID] = createSignal<string>()
   const modList = () => mods.latest ?? []
+  const selectedDebugMod = () => modList().find((mod) => mod.id === debugModID())
+  const visibleDiagnostics = () => {
+    const id = debugModID()
+    return id ? (diagnostics.latest ?? []).filter((event) => event.id === id) : (diagnostics.latest ?? [])
+  }
+  const diagnosticTimer = setInterval(() => {
+    void refetch()
+    void refetchDiagnostics()
+  }, 2_000)
+  onCleanup(() => clearInterval(diagnosticTimer))
+  const diagnostic = (mod: DesktopMod) => {
+    const item = mod.diagnostic
+    if (!item) return undefined
+    const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(
+      item.updatedAt,
+    )
+    return `${item.status === "error" ? "Debug error" : "Debug"} · ${item.message} (${time})`
+  }
+  const diagnosticTime = (updatedAt: number) =>
+    new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(updatedAt)
+  const copyDebugListener = () => {
+    const listener = debugListener.latest
+    if (!listener) return
+    void navigator.clipboard.writeText(`${listener.url}/events?token=${listener.token}`)
+  }
 
   const applyChange = (mod: DesktopMod) => {
     if (mod.contributes?.server || mod.contributes?.database) {
@@ -120,12 +151,20 @@ export const SettingsModsV2: Component = () => {
                     title={mod.name}
                     description={
                       mod.error ??
+                      diagnostic(mod) ??
                       (mod.compatible
                         ? `v${mod.version} · Priority ${mod.priority}`
                         : `v${mod.version} · Incompatible with this OpenCode version`)
                     }
                   >
                     <div class="flex items-center gap-2">
+                      <ButtonV2
+                        size="small"
+                        variant={debugModID() === mod.id ? "neutral" : "ghost-muted"}
+                        onClick={() => setDebugModID(mod.id)}
+                      >
+                        Debug
+                      </ButtonV2>
                       <ButtonV2
                         size="small"
                         variant="ghost-muted"
@@ -164,6 +203,60 @@ export const SettingsModsV2: Component = () => {
             </SettingsListV2>
           </div>
         </Show>
+
+        <div class="settings-v2-section">
+          <div class="settings-v2-tab-header-row">
+            <h3 class="settings-v2-tab-title">
+              MOD Debug Console{selectedDebugMod() ? ` · ${selectedDebugMod()!.name}` : ""}
+            </h3>
+            <div class="flex gap-2">
+              <ButtonV2
+                size="small"
+                variant="neutral"
+                disabled={!debugModID()}
+                onClick={() => setDebugModID(undefined)}
+              >
+                All MODs
+              </ButtonV2>
+              <ButtonV2 size="small" variant="neutral" disabled={!debugListener.latest} onClick={copyDebugListener}>
+                Copy listener
+              </ButtonV2>
+              <ButtonV2 size="small" variant="neutral" onClick={() => void refetchDiagnostics()}>
+                Refresh
+              </ButtonV2>
+              <ButtonV2
+                size="small"
+                variant="neutral"
+                disabled={!diagnostics.latest?.length}
+                onClick={() => {
+                  void platform.mods?.clearDiagnosticHistory().then(() => void refetchDiagnostics())
+                }}
+              >
+                Clear
+              </ButtonV2>
+            </div>
+          </div>
+          <Show
+            when={visibleDiagnostics().length}
+            fallback={
+              <div class="settings-v2-servers-status">
+                {selectedDebugMod()
+                  ? `No debug events recorded for ${selectedDebugMod()!.name} in this app session.`
+                  : "No MOD debug events recorded in this app session."}
+              </div>
+            }
+          >
+            <div class="max-h-80 overflow-y-auto border border-border-base px-3 py-2 font-mono text-xs leading-5">
+              <For each={visibleDiagnostics()}>
+                {(event) => (
+                  <div class={event.status === "error" ? "text-text-error" : "text-text-base"}>
+                    [{diagnosticTime(event.updatedAt)}] {event.status.toUpperCase()} {event.id} {event.phase}: {event.message}
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </div>
       </div>
     </>
   )

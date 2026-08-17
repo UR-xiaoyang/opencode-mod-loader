@@ -275,6 +275,9 @@ declare global {
     api?: {
       setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
       exportDebugLogs?: () => Promise<string>
+      onModDebugTrigger?: (
+        cb: (trigger: { id: string; action: "host"; name: string; input?: unknown }) => void,
+      ) => () => void
     }
   }
 }

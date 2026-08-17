@@ -12,6 +12,7 @@ export type HealthCheck = { wait: Promise<void> }
 type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
+  | { type: "mod-diagnostic"; entry: string; phase: "server" | "server-bootstrap"; status: "ready" | "error"; message: string }
   | { type: "error"; error: { message: string; stack?: string } }
 
 export type SidecarListener = { stop: () => Promise<void> }
@@ -28,6 +29,12 @@ type SpawnLocalServerOptions = {
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
+  onModDiagnostic?: (
+    entry: string,
+    phase: "server" | "server-bootstrap",
+    status: "ready" | "error",
+    message: string,
+  ) => void
 }
 
 export function getDefaultServerUrl(): string | null {
@@ -86,6 +93,10 @@ export async function spawnLocalServer(
     exit.resolve(code)
   })
   child.on("error", (error) => options.onStderr?.(`utility process error: ${serializeError(error).message}`))
+  child.on("message", (message: SidecarMessage) => {
+    if (message.type !== "mod-diagnostic") return
+    options.onModDiagnostic?.(message.entry, message.phase, message.status, message.message)
+  })
 
   child.stdout?.on("data", (chunk: Buffer) => options.onStdout?.(chunk.toString("utf8").trimEnd()))
   child.stderr?.on("data", (chunk: Buffer) => options.onStderr?.(chunk.toString("utf8").trimEnd()))

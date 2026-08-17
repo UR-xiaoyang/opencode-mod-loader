@@ -62,6 +62,18 @@ export type PublicMod = Pick<ModManifest, "id" | "name" | "version" | "descripti
   compatible: boolean
   error?: string
   contributes?: ModManifest["contributes"]
+  diagnostic?: ModDiagnostic
+}
+
+export type ModDiagnostic = {
+  phase: "manifest" | "enabled" | "window" | "sidebar" | "style" | "host" | "server" | "server-bootstrap" | "trigger"
+  status: "ready" | "pending" | "error" | "disabled"
+  message: string
+  updatedAt: number
+}
+
+export type ModDiagnosticEvent = ModDiagnostic & {
+  id: string
 }
 
 export type ModConflict = {
