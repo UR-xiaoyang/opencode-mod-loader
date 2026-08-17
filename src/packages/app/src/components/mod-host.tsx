@@ -195,6 +195,7 @@ export function ModHostScripts() {
         }
       }
       const debug = new Map<string, (input: unknown) => void | Promise<void>>()
+      const observerErrors = new Set<string>()
       runtimes.set(id, {
         dispose,
         debug,
@@ -219,12 +220,21 @@ export function ModHostScripts() {
               return track(() => style.remove())
             },
             observe: (selector, callback) => {
-              const seen = new WeakSet<HTMLElement>()
+              const observedText = new WeakMap<HTMLElement, string>()
               const run = () =>
                 document.querySelectorAll<HTMLElement>(selector).forEach((element) => {
-                  if (seen.has(element)) return
-                  seen.add(element)
-                  callback(element)
+                  const text = element.textContent ?? ""
+                  if (observedText.get(element) === text) return
+                  observedText.set(element, text)
+                  try {
+                    callback(element)
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : "Unknown UI observer error"
+                    const errorKey = `${selector}\n${message}`
+                    if (observerErrors.has(errorKey)) return
+                    observerErrors.add(errorKey)
+                    void platform.mods?.reportRuntime(id, "host", "error", `UI observer failed: ${message}`)
+                  }
                 })
               const observer = new MutationObserver(run)
               observer.observe(document.documentElement, { childList: true, subtree: true })
