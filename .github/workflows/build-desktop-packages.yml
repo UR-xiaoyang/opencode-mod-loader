@@ -65,7 +65,17 @@ jobs:
       - name: Install dependencies
         shell: pwsh
         working-directory: opencode
-        run: bun install --frozen-lockfile
+        run: |
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            bun install --frozen-lockfile
+            if ($LASTEXITCODE -eq 0) {
+              exit 0
+            }
+            if ($attempt -lt 3) {
+              Start-Sleep -Seconds (10 * $attempt)
+            }
+          }
+          exit 1
 
       - name: Build package
         shell: pwsh
