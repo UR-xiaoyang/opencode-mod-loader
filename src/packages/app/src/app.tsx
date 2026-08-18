@@ -493,6 +493,14 @@ function DesktopCommands() {
           },
         })
         for (const contribution of mod.contributes?.commands ?? []) {
+          const winner = (mods.latest ?? [])
+            .filter((item) => item.enabled && item.compatible)
+            .filter((item) => item.contributes?.commands?.some((command) => command.id === contribution.id))
+            .sort(
+              (left, right) =>
+                right.priority - left.priority || right.name.localeCompare(left.name) || right.id.localeCompare(left.id),
+            )[0]
+          if (winner?.id !== mod.id) continue
           commands.push({
             id: `mods.command.${mod.id}.${contribution.id}`,
             title: contribution.title,

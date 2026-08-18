@@ -9,6 +9,8 @@ type ModPanel = {
   panelID: string
 }
 
+type ModSidebarContribution = NonNullable<NonNullable<DesktopMod["contributes"]>["sidebar"]>[number]
+
 type ModMessage = {
   source?: string
   requestID?: string
@@ -398,15 +400,12 @@ export function ModSidebarItems(props: {
   })
 
   const panels = createMemo(() =>
-    (mods.latest ?? [])
-      .filter((mod) => mod.enabled && mod.compatible)
-      .flatMap((mod) =>
-        (mod.contributes?.sidebar ?? []).map((panel) => ({
-          ...panel,
-          modID: mod.id,
-          order: panel.order ?? 0,
-        })),
-      )
+    winningSidebarPanels(mods.latest ?? [])
+      .map(({ mod, panel }) => ({
+        ...panel,
+        modID: mod.id,
+        order: panel.order ?? 0,
+      }))
       .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title)),
   )
 
@@ -481,10 +480,26 @@ export function ModSidebarPanel(props: { panel: ModPanel }) {
 }
 
 function findPanel(mods: DesktopMod[], target: ModPanel) {
-  const mod = mods.find((item) => item.id === target.modID && item.enabled && item.compatible)
+  const mod = winningSidebarPanels(mods).find(({ mod, panel }) => mod.id === target.modID && panel.id === target.panelID)?.mod
   const panel = mod?.contributes?.sidebar?.find((item) => item.id === target.panelID)
   if (!mod || !panel) return
   return { mod, panel }
+}
+
+function winningSidebarPanels(mods: DesktopMod[]) {
+  const winners = new Map<string, { mod: DesktopMod; panel: ModSidebarContribution }>()
+  for (const mod of mods) {
+    if (!mod.enabled || !mod.compatible) continue
+    for (const panel of mod.contributes?.sidebar ?? []) {
+      const current = winners.get(panel.id)
+      if (!current || compareModPriority(current.mod, mod) <= 0) winners.set(panel.id, { mod, panel })
+    }
+  }
+  return [...winners.values()]
+}
+
+function compareModPriority(left: DesktopMod, right: DesktopMod) {
+  return left.priority - right.priority || left.name.localeCompare(right.name) || left.id.localeCompare(right.id)
 }
 
 async function runRequest(

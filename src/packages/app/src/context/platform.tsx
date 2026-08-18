@@ -60,6 +60,7 @@ export type DesktopMod = {
     server?: string
     serverBootstrap?: string
     database?: { source: "production" }
+    overrides?: { type: "style" | "host" | "server" | "server-bootstrap"; file: string; target: string }[]
   }
 }
 export type DesktopModDiagnosticEvent = NonNullable<DesktopMod["diagnostic"]> & { id: string }
@@ -70,6 +71,8 @@ export type DesktopModConflict = {
   type: "sidebar" | "command" | "style" | "host" | "server" | "server-bootstrap" | "database"
   detail: string
   certain: boolean
+  file?: string
+  target?: string
 }
 
 type PlatformBase = {

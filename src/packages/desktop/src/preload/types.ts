@@ -35,6 +35,8 @@ export type DesktopModConflict = {
   type: "sidebar" | "command" | "style" | "host" | "server" | "server-bootstrap" | "database"
   detail: string
   certain: boolean
+  file?: string
+  target?: string
 }
 
 export type LinuxDisplayBackend = "wayland" | "auto"
@@ -82,6 +84,7 @@ export type DesktopMod = {
     server?: string
     serverBootstrap?: string
     database?: { source: "production" }
+    overrides?: { type: "style" | "host" | "server" | "server-bootstrap"; file: string; target: string }[]
   }
 }
 export type DesktopModDiagnosticEvent = NonNullable<DesktopMod["diagnostic"]> & { id: string }

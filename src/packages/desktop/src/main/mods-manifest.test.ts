@@ -138,7 +138,7 @@ describe("MOD manifest", () => {
     expect(isModCompatible("1.18.0", "1.18.0")).toBe(true)
   })
 
-  test("reports declared and potential contribution conflicts", () => {
+  test("reports only overlapping declared contribution targets", () => {
     const candidate = parseModManifest({
       id: "candidate",
       name: "Candidate",
@@ -153,6 +153,10 @@ describe("MOD manifest", () => {
         server: "server.js",
         serverBootstrap: "bootstrap.js",
         database: { source: "production" },
+        overrides: [
+          { type: "style", file: "src/menu.css", target: ".mods-menu > .label" },
+          { type: "host", file: "src/menu.tsx", target: "mods-menu.label" },
+        ],
       },
     })
     const existing = parseModManifest({
@@ -164,11 +168,56 @@ describe("MOD manifest", () => {
     expect(findModConflicts(candidate, existing)).toEqual([
       expect.objectContaining({ type: "sidebar", certain: true }),
       expect.objectContaining({ type: "command", certain: true }),
-      expect.objectContaining({ type: "style", certain: false }),
-      expect.objectContaining({ type: "host", certain: false }),
-      expect.objectContaining({ type: "server", certain: false }),
-      expect.objectContaining({ type: "server-bootstrap", certain: false }),
-      expect.objectContaining({ type: "database", certain: true }),
+      expect.objectContaining({
+        type: "style",
+        certain: true,
+        file: "src/menu.css",
+        target: ".mods-menu > .label",
+      }),
+      expect.objectContaining({
+        type: "host",
+        certain: true,
+        file: "src/menu.tsx",
+        target: "mods-menu.label",
+      }),
     ])
+  })
+
+  test("does not report two overrides in different locations of the same file", () => {
+    const base = {
+      version: "1.0.0",
+      entry: "index.html",
+      permissions: ["ui.host"],
+      contributes: {
+        host: "host.js",
+        overrides: [{ type: "host", file: "src/menu.tsx", target: "mods-menu.label" }],
+      },
+    }
+    const candidate = parseModManifest({ ...base, id: "candidate", name: "Candidate" })
+    const existing = parseModManifest({
+      ...base,
+      id: "existing",
+      name: "Existing",
+      contributes: {
+        host: "host.js",
+        overrides: [{ type: "host", file: "src/menu.tsx", target: "settings-menu.label" }],
+      },
+    })
+    expect(findModConflicts(candidate, existing)).toEqual([])
+  })
+
+  test("requires override contributions to match a declared contribution", () => {
+    expect(() =>
+      parseModManifest({
+        id: "example.mod",
+        name: "Example MOD",
+        version: "1.0.0",
+        entry: "index.html",
+        permissions: ["ui.host"],
+        contributes: {
+          overrides: [{ type: "host", file: "src/menu.tsx", target: "mods-menu.label" }],
+        },
+      }),
+    ).toThrow("same type")
   })
 })

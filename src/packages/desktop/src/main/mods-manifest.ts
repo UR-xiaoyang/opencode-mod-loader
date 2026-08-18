@@ -31,6 +31,12 @@ export type ModDatabaseContribution = {
   source: "production"
 }
 
+export type ModOverrideContribution = {
+  type: "style" | "host" | "server" | "server-bootstrap"
+  file: string
+  target: string
+}
+
 export type ModManifest = {
   id: string
   name: string
@@ -53,6 +59,7 @@ export type ModManifest = {
     server?: string
     serverBootstrap?: string
     database?: ModDatabaseContribution
+    overrides?: ModOverrideContribution[]
   }
 }
 
@@ -82,6 +89,8 @@ export type ModConflict = {
   type: "sidebar" | "command" | "style" | "host" | "server" | "server-bootstrap" | "database"
   detail: string
   certain: boolean
+  file?: string
+  target?: string
 }
 
 const idPattern = /^[a-z0-9][a-z0-9._-]*$/
@@ -177,6 +186,16 @@ export function parseModManifest(value: unknown): ModManifest {
   ) {
     throw new Error('Manifest database contribution must use source "production"')
   }
+  if (
+    contributes?.overrides !== undefined &&
+    (!Array.isArray(contributes.overrides) ||
+      contributes.overrides.length > maxContributionCount ||
+      contributes.overrides.some((item) => !isOverrideContribution(item)))
+  ) {
+    throw new Error(
+      "Manifest override contributions must declare a supported contribution type, target file, target location, and at most 256 items",
+    )
+  }
   const permissions = [...new Set((manifest.permissions ?? []) as ModPermission[])]
   if (contributes?.sidebar?.length && !permissions.includes("ui.sidebar")) {
     throw new Error("Sidebar contributions require ui.sidebar permission")
@@ -198,6 +217,17 @@ export function parseModManifest(value: unknown): ModManifest {
   }
   if (contributes?.database && !permissions.includes("server.database")) {
     throw new Error("Database contributions require server.database permission")
+  }
+  const overrides = (contributes?.overrides as Array<Record<string, unknown>> | undefined)?.map((item) => ({
+    type: item.type as ModOverrideContribution["type"],
+    file: (item.file as string).trim(),
+    target: (item.target as string).trim(),
+  }))
+  if (overrides?.some((item) => !hasContributionForOverride(contributes, item.type))) {
+    throw new Error("Override contributions must reference a declared contribution of the same type")
+  }
+  if (overrides && new Set(overrides.map((item) => `${item.type}\n${item.file}\n${item.target}`)).size !== overrides.length) {
+    throw new Error("Override contributions must be unique")
   }
   const sidebar = (contributes?.sidebar as Array<Record<string, unknown>> | undefined)?.map((item) => ({
     id: item.id as string,
@@ -238,6 +268,7 @@ export function parseModManifest(value: unknown): ModManifest {
       server: contributes?.server as string | undefined,
       serverBootstrap: contributes?.serverBootstrap as string | undefined,
       database: contributes?.database as ModDatabaseContribution | undefined,
+      overrides,
     },
   }
 }
@@ -262,12 +293,18 @@ export function isModCompatible(range: string | undefined, version: string) {
 }
 
 export function findModConflicts(candidate: ModManifest, existing: ModManifest): ModConflict[] {
-  const conflict = (type: ModConflict["type"], detail: string, certain: boolean): ModConflict => ({
+  const conflict = (
+    type: ModConflict["type"],
+    detail: string,
+    certain: boolean,
+    location?: Pick<ModConflict, "file" | "target">,
+  ): ModConflict => ({
     modID: existing.id,
     modName: existing.name,
     type,
     detail,
     certain,
+    ...location,
   })
   const sidebarIDs = new Set(existing.contributes?.sidebar?.map((item) => item.id))
   const commandIDs = new Set(existing.contributes?.commands?.map((item) => item.id))
@@ -283,33 +320,23 @@ export function findModConflicts(candidate: ModManifest, existing: ModManifest):
         ? [conflict("command", `Both MODs contribute the "${item.id}" command.`, true)]
         : [],
     )
-  const styles =
-    candidate.contributes?.styles && existing.contributes?.styles
-      ? [conflict("style", "Both MODs inject renderer styles; CSS rules can override each other.", false)]
-      : []
-  const host =
-    candidate.contributes?.host && existing.contributes?.host
-      ? [conflict("host", "Both MODs run trusted host scripts that can modify the same UI.", false)]
-      : []
-  const server =
-    candidate.contributes?.server && existing.contributes?.server
-      ? [conflict("server", "Both MODs run trusted server plugins; their hooks can overlap.", false)]
-      : []
-  const serverBootstrap =
-    candidate.contributes?.serverBootstrap && existing.contributes?.serverBootstrap
-      ? [
-          conflict(
-            "server-bootstrap",
-            "Both MODs install pre-server runtime code; the later MOD can replace the same global behavior.",
-            false,
-          ),
-        ]
-      : []
-  const database =
-    candidate.contributes?.database && existing.contributes?.database
-      ? [conflict("database", "Both MODs select a shared session database.", true)]
-      : []
-  return [...(sidebar ?? []), ...(commands ?? []), ...styles, ...host, ...server, ...serverBootstrap, ...database]
+  const existingOverrides = new Set(
+    existing.contributes?.overrides?.map((item) => `${item.type}\n${item.file}\n${item.target}`) ?? [],
+  )
+  const overrides =
+    candidate.contributes?.overrides?.flatMap((item) =>
+      existingOverrides.has(`${item.type}\n${item.file}\n${item.target}`)
+        ? [
+            conflict(
+              item.type,
+              `Both MODs override "${item.target}" in "${item.file}". The higher-priority MOD loads later and owns this location.`,
+              true,
+              { file: item.file, target: item.target },
+            ),
+          ]
+        : [],
+    ) ?? []
+  return [...(sidebar ?? []), ...(commands ?? []), ...overrides]
 }
 
 function compareVersions(left: number[], right: number[]) {
@@ -346,4 +373,23 @@ function isCommandContribution(value: unknown) {
     (item.description === undefined || typeof item.description === "string") &&
     (item.panel === undefined || isContributionID(item.panel))
   )
+}
+
+function isOverrideContribution(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const item = value as Record<string, unknown>
+  return (
+    ["style", "host", "server", "server-bootstrap"].includes(item.type as string) &&
+    typeof item.file === "string" &&
+    Boolean(item.file.trim()) &&
+    typeof item.target === "string" &&
+    Boolean(item.target.trim())
+  )
+}
+
+function hasContributionForOverride(contributes: Record<string, unknown> | undefined, type: ModOverrideContribution["type"]) {
+  if (type === "style") return Boolean(contributes?.styles)
+  if (type === "host") return Boolean(contributes?.host)
+  if (type === "server") return Boolean(contributes?.server)
+  return Boolean(contributes?.serverBootstrap)
 }

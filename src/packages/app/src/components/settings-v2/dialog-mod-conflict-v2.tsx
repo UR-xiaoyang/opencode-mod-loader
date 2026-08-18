@@ -4,7 +4,7 @@ import { DividerV2 } from "@opencode-ai/ui/v2/divider-v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useNavigate } from "@solidjs/router"
-import { For, type Component } from "solid-js"
+import { For, Show, type Component } from "solid-js"
 import type { DesktopMod, DesktopModConflict } from "@/context/platform"
 
 export const DialogModConflictV2: Component<{
@@ -39,6 +39,11 @@ export const DialogModConflictV2: Component<{
                   {conflict.modName} · {conflict.certain ? "Declared conflict" : "Potential conflict"}
                 </span>
                 <span class="text-13-regular text-text-weak">{conflict.detail}</span>
+                <Show when={conflict.file && conflict.target}>
+                  <span class="text-12-regular text-text-weak">
+                    {conflict.file} · {conflict.target}
+                  </span>
+                </Show>
               </div>
             )}
           </For>

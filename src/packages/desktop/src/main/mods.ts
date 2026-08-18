@@ -45,12 +45,13 @@ type ConflictIndex = {
   server: Set<string>
   serverBootstrap: Set<string>
   database: Set<string>
+  override: Map<string, Set<string>>
 }
 
 const maxManifestBytes = 1024 * 1024
 const reloadBatchSize = 16
 const maxDiagnosticEvents = 300
-export const MOD_LOADER_VERSION = "0.3.6"
+export const MOD_LOADER_VERSION = "0.3.7"
 
 export function createModManager(version: string) {
   const installed = new Map<string, InstalledMod>()
@@ -67,6 +68,7 @@ export function createModManager(version: string) {
     server: new Set(),
     serverBootstrap: new Set(),
     database: new Set(),
+    override: new Map(),
   }
 
   function enabledIDs() {
@@ -213,6 +215,9 @@ export function createModManager(version: string) {
       ...(candidate.manifest.contributes?.server ? conflictIndex.server : []),
       ...(candidate.manifest.contributes?.serverBootstrap ? conflictIndex.serverBootstrap : []),
       ...(candidate.manifest.contributes?.database ? conflictIndex.database : []),
+      ...(candidate.manifest.contributes?.overrides?.flatMap((item) => [
+        ...(conflictIndex.override.get(overrideKey(item.type, item.file, item.target)) ?? []),
+      ]) ?? []),
     ])
     ids.delete(id)
     return [...ids]
@@ -248,6 +253,7 @@ export function createModManager(version: string) {
     conflictIndex.server.clear()
     conflictIndex.serverBootstrap.clear()
     conflictIndex.database.clear()
+    conflictIndex.override.clear()
     if (safeMode()) return
     const enabled = new Set(enabledIDs())
     installed.forEach((mod) => {
@@ -259,6 +265,9 @@ export function createModManager(version: string) {
       if (mod.manifest.contributes?.server) conflictIndex.server.add(mod.manifest.id)
       if (mod.manifest.contributes?.serverBootstrap) conflictIndex.serverBootstrap.add(mod.manifest.id)
       if (mod.manifest.contributes?.database) conflictIndex.database.add(mod.manifest.id)
+      mod.manifest.contributes?.overrides?.forEach((item) =>
+        addIndex(conflictIndex.override, overrideKey(item.type, item.file, item.target), mod.manifest.id),
+      )
     })
   }
 
@@ -551,6 +560,10 @@ function addIndex(index: Map<string, Set<string>>, key: string, id: string) {
   const ids = index.get(key) ?? new Set<string>()
   ids.add(id)
   index.set(key, ids)
+}
+
+function overrideKey(type: string, file: string, target: string) {
+  return `${type}\n${file}\n${target}`
 }
 
 export function registerModProtocol(manager: ReturnType<typeof createModManager>) {
