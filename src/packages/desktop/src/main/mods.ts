@@ -50,7 +50,7 @@ type ConflictIndex = {
 const maxManifestBytes = 1024 * 1024
 const reloadBatchSize = 16
 const maxDiagnosticEvents = 300
-export const MOD_LOADER_VERSION = "0.3.4"
+export const MOD_LOADER_VERSION = "0.3.5"
 
 export function createModManager(version: string) {
   const installed = new Map<string, InstalledMod>()

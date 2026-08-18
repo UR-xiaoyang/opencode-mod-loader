@@ -11,6 +11,7 @@ export const SettingsModsV2: Component = () => {
   const platform = usePlatform()
   const dialog = useDialog()
   const [mods, { refetch }] = createResource(() => platform.mods?.list(), { initialValue: [] as DesktopMod[] })
+  const [modStatus, { refetch: refetchModStatus }] = createResource(() => platform.mods?.status())
   const [safeMode, { refetch: refetchSafeMode }] = createResource(() => platform.mods?.safeMode(), { initialValue: false })
   const [diagnostics, { refetch: refetchDiagnostics }] = createResource(
     () => platform.mods?.diagnosticHistory(),
@@ -124,13 +125,22 @@ export const SettingsModsV2: Component = () => {
       <div class="settings-v2-tab-header">
         <div class="settings-v2-tab-header-row">
           <h2 class="settings-v2-tab-title">MODs</h2>
-          <div class="flex gap-2">
-            <ButtonV2 size="small" variant="neutral" onClick={() => void platform.mods?.openFolder()}>
-              Open folder
-            </ButtonV2>
-            <ButtonV2 size="small" variant="neutral" onClick={refresh}>
-              Refresh
-            </ButtonV2>
+          <div class="flex items-center gap-3">
+            <Show when={modStatus.latest}>
+              {(status) => (
+                <span class="text-xs text-text-weak">
+                  MOD Loader v{status().version} · {status().enabled ? "Enabled" : "Safe mode"}
+                </span>
+              )}
+            </Show>
+            <div class="flex gap-2">
+              <ButtonV2 size="small" variant="neutral" onClick={() => void platform.mods?.openFolder()}>
+                Open folder
+              </ButtonV2>
+              <ButtonV2 size="small" variant="neutral" onClick={refresh}>
+                Refresh
+              </ButtonV2>
+            </div>
           </div>
         </div>
       </div>
@@ -147,6 +157,7 @@ export const SettingsModsV2: Component = () => {
                 onChange={(enabled) => {
                   void platform.mods?.setSafeMode(!enabled).then((loaded) => {
                     void refetchSafeMode()
+                    void refetchModStatus()
                     if (
                       loaded.some(
                         (mod) => mod.enabled && mod.compatible && (mod.contributes?.server || mod.contributes?.database),
