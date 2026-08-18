@@ -116,7 +116,9 @@ export function ModHostScripts() {
   }
   const host: NonNullable<Window["opencodeHost"]> = {
     forScript: () => {
-      const id = (document.currentScript as HTMLScriptElement | null)?.dataset.opencodeModHostScript
+      const currentID = (document.currentScript as HTMLScriptElement | null)?.dataset.opencodeModHostScript
+      const pending = [...scripts.keys()].filter((id) => !runtimes.get(id)?.initialized)
+      const id = currentID ?? (pending.length === 1 ? pending[0] : undefined)
       if (!id) throw new Error("opencodeHost.forScript() must be called while a MOD host script is loading")
       const runtime = runtimes.get(id)
       if (!runtime) throw new Error(`MOD host "${id}" is not active`)
@@ -337,8 +339,8 @@ export function ModHostScripts() {
         },
         { once: true },
       )
-      document.head.append(script)
       scripts.set(id, script)
+      document.head.append(script)
     })
   })
 
