@@ -21,6 +21,7 @@ type ModMessage = {
 type HostRuntime = {
   dispose: Set<() => void>
   debug: Map<string, (input: unknown) => void | Promise<void>>
+  initialized: boolean
   host: NonNullable<Window["opencodeHost"]>["forMod"] extends (id: string) => infer Value ? Value : never
 }
 
@@ -117,7 +118,13 @@ export function ModHostScripts() {
     forScript: () => {
       const id = (document.currentScript as HTMLScriptElement | null)?.dataset.opencodeModHostScript
       if (!id) throw new Error("opencodeHost.forScript() must be called while a MOD host script is loading")
-      return host.forMod(id)
+      const runtime = runtimes.get(id)
+      if (!runtime) throw new Error(`MOD host "${id}" is not active`)
+      if (!runtime.initialized) {
+        runtime.initialized = true
+        void platform.mods?.reportRuntime(id, "host", "ready", "Host script initialized its MOD runtime.")
+      }
+      return runtime.host
     },
     forMod: (id) => {
       const runtime = runtimes.get(id)
@@ -227,6 +234,7 @@ export function ModHostScripts() {
       runtimes.set(id, {
         dispose,
         debug,
+        initialized: false,
         host: {
           id,
           commands: {
@@ -305,6 +313,15 @@ export function ModHostScripts() {
         "load",
         () => {
           if (executionErrors.size > 0) return
+          if (!runtimes.get(id)?.initialized) {
+            void platform.mods?.reportRuntime(
+              id,
+              "host",
+              "error",
+              "Host script loaded but did not initialize its MOD runtime. Call window.opencodeHost.forScript() at the top level.",
+            )
+            return
+          }
           void platform.mods?.reportRuntime(id, "host", "ready", "Host script loaded.")
         },
         { once: true },
