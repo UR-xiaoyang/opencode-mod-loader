@@ -45,13 +45,13 @@ type ConflictIndex = {
   server: Set<string>
   serverBootstrap: Set<string>
   database: Set<string>
-  override: Map<string, Set<string>>
+  overrideFile: Map<string, Set<string>>
 }
 
 const maxManifestBytes = 1024 * 1024
 const reloadBatchSize = 16
 const maxDiagnosticEvents = 300
-export const MOD_LOADER_VERSION = "0.3.8"
+export const MOD_LOADER_VERSION = "0.3.9"
 
 export function createModManager(version: string) {
   const installed = new Map<string, InstalledMod>()
@@ -68,7 +68,7 @@ export function createModManager(version: string) {
     server: new Set(),
     serverBootstrap: new Set(),
     database: new Set(),
-    override: new Map(),
+    overrideFile: new Map(),
   }
 
   function enabledIDs() {
@@ -216,7 +216,7 @@ export function createModManager(version: string) {
       ...(candidate.manifest.contributes?.serverBootstrap ? conflictIndex.serverBootstrap : []),
       ...(candidate.manifest.contributes?.database ? conflictIndex.database : []),
       ...(candidate.manifest.contributes?.overrides?.flatMap((item) => [
-        ...(conflictIndex.override.get(overrideKey(item.type, item.file, item.target)) ?? []),
+        ...(conflictIndex.overrideFile.get(overrideFileKey(item.type, item.file)) ?? []),
       ]) ?? []),
     ])
     ids.delete(id)
@@ -253,7 +253,7 @@ export function createModManager(version: string) {
     conflictIndex.server.clear()
     conflictIndex.serverBootstrap.clear()
     conflictIndex.database.clear()
-    conflictIndex.override.clear()
+    conflictIndex.overrideFile.clear()
     if (safeMode()) return
     const enabled = new Set(enabledIDs())
     installed.forEach((mod) => {
@@ -266,7 +266,7 @@ export function createModManager(version: string) {
       if (mod.manifest.contributes?.serverBootstrap) conflictIndex.serverBootstrap.add(mod.manifest.id)
       if (mod.manifest.contributes?.database) conflictIndex.database.add(mod.manifest.id)
       mod.manifest.contributes?.overrides?.forEach((item) =>
-        addIndex(conflictIndex.override, overrideKey(item.type, item.file, item.target), mod.manifest.id),
+        addIndex(conflictIndex.overrideFile, overrideFileKey(item.type, item.file), mod.manifest.id),
       )
     })
   }
@@ -562,8 +562,8 @@ function addIndex(index: Map<string, Set<string>>, key: string, id: string) {
   index.set(key, ids)
 }
 
-function overrideKey(type: string, file: string, target: string) {
-  return `${type}\n${file}\n${target}`
+function overrideFileKey(type: string, file: string) {
+  return `${type}\n${file}`
 }
 
 export function registerModProtocol(manager: ReturnType<typeof createModManager>) {

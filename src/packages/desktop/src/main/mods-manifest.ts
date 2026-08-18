@@ -34,7 +34,20 @@ export type ModDatabaseContribution = {
 export type ModOverrideContribution = {
   type: "style" | "host" | "server" | "server-bootstrap"
   file: string
-  target: string
+  /**
+   * Legacy symbolic location. New MODs should declare base and changes so
+   * conflicts can be checked using actual source ranges.
+   */
+  target?: string
+  base?: string
+  changes?: ModOverrideChange[]
+}
+
+export type ModOverrideChange = {
+  operation: "add" | "modify" | "delete"
+  start: number
+  end: number
+  content?: string
 }
 
 export type ModManifest = {
@@ -193,7 +206,7 @@ export function parseModManifest(value: unknown): ModManifest {
       contributes.overrides.some((item) => !isOverrideContribution(item)))
   ) {
     throw new Error(
-      "Manifest override contributions must declare a supported contribution type, target file, target location, and at most 256 items",
+      "Manifest override contributions must declare a supported contribution type, target file, and either a symbolic target or base plus source changes",
     )
   }
   const permissions = [...new Set((manifest.permissions ?? []) as ModPermission[])]
@@ -221,12 +234,30 @@ export function parseModManifest(value: unknown): ModManifest {
   const overrides = (contributes?.overrides as Array<Record<string, unknown>> | undefined)?.map((item) => ({
     type: item.type as ModOverrideContribution["type"],
     file: (item.file as string).trim(),
-    target: (item.target as string).trim(),
+    target: typeof item.target === "string" ? item.target.trim() : undefined,
+    base: typeof item.base === "string" ? item.base.trim() : undefined,
+    changes: (item.changes as Array<Record<string, unknown>> | undefined)?.map((change) => ({
+      operation: change.operation as ModOverrideChange["operation"],
+      start: change.start as number,
+      end: change.end as number,
+      content: change.content as string | undefined,
+    })),
   }))
   if (overrides?.some((item) => !hasContributionForOverride(contributes, item.type))) {
     throw new Error("Override contributions must reference a declared contribution of the same type")
   }
-  if (overrides && new Set(overrides.map((item) => `${item.type}\n${item.file}\n${item.target}`)).size !== overrides.length) {
+  if (
+    overrides &&
+    new Set(
+      overrides.map((item) =>
+        item.changes
+          ? `${item.type}\n${item.file}\n${item.base}\n${item.changes
+              .map((change) => `${change.operation}:${change.start}:${change.end}:${change.content ?? ""}`)
+              .join("|")}`
+          : `${item.type}\n${item.file}\n${item.target}`,
+      ),
+    ).size !== overrides.length
+  ) {
     throw new Error("Override contributions must be unique")
   }
   const sidebar = (contributes?.sidebar as Array<Record<string, unknown>> | undefined)?.map((item) => ({
@@ -320,21 +351,57 @@ export function findModConflicts(candidate: ModManifest, existing: ModManifest):
         ? [conflict("command", `Both MODs contribute the "${item.id}" command.`, true)]
         : [],
     )
-  const existingOverrides = new Set(
-    existing.contributes?.overrides?.map((item) => `${item.type}\n${item.file}\n${item.target}`) ?? [],
-  )
   const overrides =
-    candidate.contributes?.overrides?.flatMap((item) =>
-      existingOverrides.has(`${item.type}\n${item.file}\n${item.target}`)
-        ? [
+    candidate.contributes?.overrides?.flatMap((candidateOverride) =>
+      (existing.contributes?.overrides ?? []).flatMap((existingOverride) => {
+        if (
+          candidateOverride.type !== existingOverride.type ||
+          candidateOverride.file !== existingOverride.file
+        ) {
+          return []
+        }
+        if (candidateOverride.changes && existingOverride.changes) {
+          if (candidateOverride.base !== existingOverride.base) {
+            return [
+              conflict(
+                candidateOverride.type,
+                `Both MODs patch "${candidateOverride.file}" from different base revisions. Review the patches before combining them.`,
+                false,
+                { file: candidateOverride.file, target: "different base revisions" },
+              ),
+            ]
+          }
+          return candidateOverride.changes.flatMap((candidateChange) =>
+            existingOverride.changes!.flatMap((existingChange) => {
+              if (!changesOverlap(candidateChange, existingChange) || changesEqual(candidateChange, existingChange)) return []
+              const target = formatChangeRange(candidateChange)
+              return [
+                conflict(
+                  candidateOverride.type,
+                  `Both MODs change ${target} in "${candidateOverride.file}". The higher-priority MOD loads later and owns the overlapping change.`,
+                  true,
+                  { file: candidateOverride.file, target },
+                ),
+              ]
+            }),
+          )
+        }
+        if (
+          candidateOverride.target &&
+          existingOverride.target &&
+          candidateOverride.target === existingOverride.target
+        ) {
+          return [
             conflict(
-              item.type,
-              `Both MODs override "${item.target}" in "${item.file}". The higher-priority MOD loads later and owns this location.`,
+              candidateOverride.type,
+              `Both MODs override "${candidateOverride.target}" in "${candidateOverride.file}". The higher-priority MOD loads later and owns this location.`,
               true,
-              { file: item.file, target: item.target },
+              { file: candidateOverride.file, target: candidateOverride.target },
             ),
           ]
-        : [],
+        }
+        return []
+      }),
     ) ?? []
   return [...(sidebar ?? []), ...(commands ?? []), ...overrides]
 }
@@ -382,8 +449,13 @@ function isOverrideContribution(value: unknown) {
     ["style", "host", "server", "server-bootstrap"].includes(item.type as string) &&
     typeof item.file === "string" &&
     Boolean(item.file.trim()) &&
-    typeof item.target === "string" &&
-    Boolean(item.target.trim())
+    ((typeof item.target === "string" && Boolean(item.target.trim()) && item.base === undefined && item.changes === undefined) ||
+      (typeof item.base === "string" &&
+        Boolean(item.base.trim()) &&
+        Array.isArray(item.changes) &&
+        item.changes.length > 0 &&
+        item.changes.length <= maxContributionCount &&
+        item.changes.every(isOverrideChange)))
   )
 }
 
@@ -392,4 +464,35 @@ function hasContributionForOverride(contributes: Record<string, unknown> | undef
   if (type === "host") return Boolean(contributes?.host)
   if (type === "server") return Boolean(contributes?.server)
   return Boolean(contributes?.serverBootstrap)
+}
+
+function isOverrideChange(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const item = value as Record<string, unknown>
+  const operation = item.operation
+  if (!["add", "modify", "delete"].includes(operation as string)) return false
+  if (!Number.isSafeInteger(item.start) || !Number.isSafeInteger(item.end) || (item.start as number) < 1) return false
+  if (operation === "add" ? item.start !== item.end : (item.end as number) < (item.start as number)) return false
+  return item.content === undefined || typeof item.content === "string"
+}
+
+function changesOverlap(left: ModOverrideChange, right: ModOverrideChange) {
+  if (left.operation === "add" && right.operation === "add") return left.start === right.start
+  if (left.operation === "add") return left.start >= right.start && left.start <= right.end
+  if (right.operation === "add") return right.start >= left.start && right.start <= left.end
+  return left.start <= right.end && right.start <= left.end
+}
+
+function changesEqual(left: ModOverrideChange, right: ModOverrideChange) {
+  return (
+    left.operation === right.operation &&
+    left.start === right.start &&
+    left.end === right.end &&
+    left.content === right.content
+  )
+}
+
+function formatChangeRange(change: ModOverrideChange) {
+  if (change.operation === "add") return `line ${change.start} insertion`
+  return change.start === change.end ? `line ${change.start}` : `lines ${change.start}-${change.end}`
 }

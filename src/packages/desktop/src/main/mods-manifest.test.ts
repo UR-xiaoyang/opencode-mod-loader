@@ -206,6 +206,126 @@ describe("MOD manifest", () => {
     expect(findModConflicts(candidate, existing)).toEqual([])
   })
 
+  test("allows patch changes in separate source ranges of the same base file", () => {
+    const base = {
+      version: "1.0.0",
+      entry: "index.html",
+      permissions: ["ui.host"],
+      contributes: {
+        host: "host.js",
+        overrides: [
+          {
+            type: "host",
+            file: "src/menu.tsx",
+            base: "sha256:base-menu",
+            changes: [{ operation: "modify", start: 12, end: 14, content: "translated menu" }],
+          },
+        ],
+      },
+    }
+    const candidate = parseModManifest({ ...base, id: "candidate", name: "Candidate" })
+    const existing = parseModManifest({
+      ...base,
+      id: "existing",
+      name: "Existing",
+      contributes: {
+        host: "host.js",
+        overrides: [
+          {
+            type: "host",
+            file: "src/menu.tsx",
+            base: "sha256:base-menu",
+            changes: [{ operation: "add", start: 48, end: 48, content: "council action" }],
+          },
+        ],
+      },
+    })
+    expect(findModConflicts(candidate, existing)).toEqual([])
+  })
+
+  test("reports only overlapping changes made against the same base file", () => {
+    const base = {
+      version: "1.0.0",
+      entry: "index.html",
+      permissions: ["ui.host"],
+      contributes: {
+        host: "host.js",
+        overrides: [
+          {
+            type: "host",
+            file: "src/menu.tsx",
+            base: "sha256:base-menu",
+            changes: [{ operation: "modify", start: 12, end: 14, content: "translated menu" }],
+          },
+        ],
+      },
+    }
+    const candidate = parseModManifest({ ...base, id: "candidate", name: "Candidate" })
+    const existing = parseModManifest({
+      ...base,
+      id: "existing",
+      name: "Existing",
+      contributes: {
+        host: "host.js",
+        overrides: [
+          {
+            type: "host",
+            file: "src/menu.tsx",
+            base: "sha256:base-menu",
+            changes: [{ operation: "delete", start: 14, end: 16 }],
+          },
+        ],
+      },
+    })
+    expect(findModConflicts(candidate, existing)).toEqual([
+      expect.objectContaining({
+        type: "host",
+        certain: true,
+        file: "src/menu.tsx",
+        target: "lines 12-14",
+      }),
+    ])
+  })
+
+  test("does not block patches with different declared base revisions", () => {
+    const base = {
+      version: "1.0.0",
+      entry: "index.html",
+      permissions: ["ui.host"],
+      contributes: {
+        host: "host.js",
+        overrides: [
+          {
+            type: "host",
+            file: "src/menu.tsx",
+            base: "sha256:base-a",
+            changes: [{ operation: "modify", start: 12, end: 14 }],
+          },
+        ],
+      },
+    }
+    const candidate = parseModManifest({ ...base, id: "candidate", name: "Candidate" })
+    const existing = parseModManifest({
+      ...base,
+      id: "existing",
+      name: "Existing",
+      contributes: {
+        host: "host.js",
+        overrides: [
+          {
+            type: "host",
+            file: "src/menu.tsx",
+            base: "sha256:base-b",
+            changes: [{ operation: "modify", start: 12, end: 14 }],
+          },
+        ],
+      },
+    })
+    expect(findModConflicts(candidate, existing)).toEqual([
+      expect.objectContaining({ type: "host", certain: false, target: "different base revisions" }),
+    ])
+  })
+
   test("requires override contributions to match a declared contribution", () => {
     expect(() =>
       parseModManifest({
