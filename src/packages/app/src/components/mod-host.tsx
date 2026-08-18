@@ -300,7 +300,6 @@ export function ModHostScripts() {
       const script = document.createElement("script")
       script.src = src
       script.async = false
-      script.crossOrigin = "anonymous"
       script.dataset.opencodeModHostScript = id
       script.addEventListener(
         "load",
