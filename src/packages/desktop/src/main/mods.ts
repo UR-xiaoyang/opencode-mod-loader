@@ -50,7 +50,7 @@ type ConflictIndex = {
 const maxManifestBytes = 1024 * 1024
 const reloadBatchSize = 16
 const maxDiagnosticEvents = 300
-export const MOD_LOADER_VERSION = "0.2.0"
+export const MOD_LOADER_VERSION = "0.3.2"
 
 export function createModManager(version: string) {
   const installed = new Map<string, InstalledMod>()
@@ -485,6 +485,7 @@ export function createModManager(version: string) {
         headers: request.headers.get("range") ? { range: request.headers.get("range")! } : undefined,
       })
       const headers = new Headers(response.headers)
+      headers.set("Access-Control-Allow-Origin", "*")
       headers.set(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors oc://renderer; form-action 'none'",

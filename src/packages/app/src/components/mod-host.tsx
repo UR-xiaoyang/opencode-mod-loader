@@ -196,6 +196,34 @@ export function ModHostScripts() {
       }
       const debug = new Map<string, (input: unknown) => void | Promise<void>>()
       const observerErrors = new Set<string>()
+      const executionErrors = new Set<string>()
+      const sourceURL = new URL(src, window.location.href).href
+      const matchesSource = (filename: string) => {
+        try {
+          return new URL(filename, window.location.href).href === sourceURL
+        } catch {
+          return filename === src || filename === sourceURL
+        }
+      }
+      const reportExecutionError = (message: string) => {
+        const normalized = message.trim() || "Unknown MOD host script error"
+        if (executionErrors.has(normalized)) return
+        executionErrors.add(normalized)
+        void platform.mods?.reportRuntime(id, "host", "error", `Host script execution failed: ${normalized}`)
+      }
+      const onExecutionError = (event: ErrorEvent) => {
+        if (!event.filename || !matchesSource(event.filename)) return
+        reportExecutionError(event.message)
+      }
+      const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+        const reason = event.reason
+        if (!(reason instanceof Error) || !reason.stack?.includes(sourceURL)) return
+        reportExecutionError(`Unhandled promise rejection: ${reason.message}`)
+      }
+      window.addEventListener("error", onExecutionError, true)
+      window.addEventListener("unhandledrejection", onUnhandledRejection)
+      track(() => window.removeEventListener("error", onExecutionError, true))
+      track(() => window.removeEventListener("unhandledrejection", onUnhandledRejection))
       runtimes.set(id, {
         dispose,
         debug,
@@ -272,10 +300,12 @@ export function ModHostScripts() {
       const script = document.createElement("script")
       script.src = src
       script.async = false
+      script.crossOrigin = "anonymous"
       script.dataset.opencodeModHostScript = id
       script.addEventListener(
         "load",
         () => {
+          if (executionErrors.size > 0) return
           void platform.mods?.reportRuntime(id, "host", "ready", "Host script loaded.")
         },
         { once: true },
