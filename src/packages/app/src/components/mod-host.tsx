@@ -116,24 +116,25 @@ export function ModHostScripts() {
     target.append(element)
     return element
   }
+  const initializeRuntime = (id: string) => {
+    const runtime = runtimes.get(id)
+    if (!runtime) throw new Error(`MOD host "${id}" is not active`)
+    if (!runtime.initialized) {
+      runtime.initialized = true
+      void platform.mods?.reportRuntime(id, "host", "ready", "Host script initialized its MOD runtime.")
+    }
+    return runtime
+  }
   const host: NonNullable<Window["opencodeHost"]> = {
     forScript: () => {
       const currentID = (document.currentScript as HTMLScriptElement | null)?.dataset.opencodeModHostScript
       const pending = [...scripts.keys()].filter((id) => !runtimes.get(id)?.initialized)
       const id = currentID ?? (pending.length === 1 ? pending[0] : undefined)
       if (!id) throw new Error("opencodeHost.forScript() must be called while a MOD host script is loading")
-      const runtime = runtimes.get(id)
-      if (!runtime) throw new Error(`MOD host "${id}" is not active`)
-      if (!runtime.initialized) {
-        runtime.initialized = true
-        void platform.mods?.reportRuntime(id, "host", "ready", "Host script initialized its MOD runtime.")
-      }
-      return runtime.host
+      return initializeRuntime(id).host
     },
     forMod: (id) => {
-      const runtime = runtimes.get(id)
-      if (!runtime) throw new Error(`MOD host "${id}" is not active`)
-      return runtime.host
+      return initializeRuntime(id).host
     },
     commands: {
       register: registerCommand,
