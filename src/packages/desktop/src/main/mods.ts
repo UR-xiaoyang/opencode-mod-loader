@@ -50,7 +50,7 @@ type ConflictIndex = {
 const maxManifestBytes = 1024 * 1024
 const reloadBatchSize = 16
 const maxDiagnosticEvents = 300
-export const MOD_LOADER_VERSION = "0.3.5"
+export const MOD_LOADER_VERSION = "0.3.6"
 
 export function createModManager(version: string) {
   const installed = new Map<string, InstalledMod>()
@@ -97,7 +97,7 @@ export function createModManager(version: string) {
     const mod = installed.get(id)
     if (!mod) throw new Error(`MOD "${id}" was not found`)
     if (!isModCompatible(mod.manifest.engines?.opencode, version)) throw new Error(`MOD "${id}" is not compatible`)
-    const conflicts = conflictsFor(id)
+    const conflicts = blockingConflictsFor(id)
     if (enabled && conflicts.length && !resolution) {
       throw new Error(`MOD "${id}" conflicts with enabled MODs. Choose a load priority before enabling it.`)
     }
@@ -221,6 +221,10 @@ export function createModManager(version: string) {
       .flatMap((existing) => findModConflicts(candidate.manifest, existing.manifest))
   }
 
+  function blockingConflictsFor(id: string) {
+    return conflictsFor(id).filter((conflict) => conflict.certain)
+  }
+
   async function preload(id: string) {
     const previous = installed.get(id)
     if (!previous) throw new Error(`MOD "${id}" was not found. Refresh the MOD list and try again.`)
@@ -231,7 +235,7 @@ export function createModManager(version: string) {
     if (!isModCompatible(mod.manifest.engines?.opencode, version)) throw new Error(`MOD "${id}" is not compatible`)
     return {
       mod: publicMod(mod),
-      conflicts: conflictsFor(id),
+      conflicts: blockingConflictsFor(id),
       directory: mod.root,
     }
   }
