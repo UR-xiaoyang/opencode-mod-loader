@@ -187,7 +187,7 @@ export function ModHostScripts() {
     const desired = new Map(
       (mods.latest ?? [])
         .filter((mod) => mod.enabled && mod.compatible && mod.contributes?.host)
-        .map((mod) => [mod.id, modURL(mod.id, mod.contributes!.host!)]),
+        .map((mod) => [mod.id, modURL(mod.id, mod.contributes!.host!, mod.version)]),
     )
     scripts.forEach((script, id) => {
       if (desired.has(id)) return
@@ -524,10 +524,11 @@ function reply(event: MessageEvent, data: object) {
   ;(event.source as WindowProxy | null)?.postMessage(data, "*")
 }
 
-function modURL(id: string, file: string) {
-  return `oc-mod://${id}/${file
+function modURL(id: string, file: string, revision?: string) {
+  const path = file
     .replace(/^[/\\]+/, "")
     .split("/")
     .map((part) => encodeURIComponent(part))
-    .join("/")}`
+    .join("/")
+  return `oc-mod://${id}/${path}${revision ? `?v=${encodeURIComponent(revision)}` : ""}`
 }

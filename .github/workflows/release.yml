@@ -67,6 +67,7 @@ jobs:
         working-directory: opencode\packages\desktop
         run: |
           $env:OPENCODE_CHANNEL = "prod"
+          $env:OPENCODE_MODELS_URL = "https://models.opencode.ai"
           $env:NODE_OPTIONS = "--max-old-space-size=4096"
           bun run build
           bun run package:win -- --publish never

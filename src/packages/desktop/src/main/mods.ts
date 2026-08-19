@@ -499,6 +499,8 @@ export function createModManager(version: string) {
       })
       const headers = new Headers(response.headers)
       headers.set("Access-Control-Allow-Origin", "*")
+      headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+      headers.set("Pragma", "no-cache")
       headers.set(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; media-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors oc://renderer; form-action 'none'",

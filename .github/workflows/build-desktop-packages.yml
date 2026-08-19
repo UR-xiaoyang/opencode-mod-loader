@@ -82,6 +82,7 @@ jobs:
         working-directory: opencode/packages/desktop
         env:
           OPENCODE_CHANNEL: prod
+          OPENCODE_MODELS_URL: https://models.opencode.ai
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           NODE_OPTIONS: --max-old-space-size=4096
         run: |
