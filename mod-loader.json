@@ -1,5 +1,5 @@
 {
   "upstream": "https://github.com/anomalyco/opencode.git",
-  "baseCommit": "31406ccc51b4bd2a4e1e086b2bcaa5f7f804f26d",
-  "upstreamVersion": "1.18.18"
+  "baseCommit": "fe3f3a41f79ad292cc3c7c629567385a20ec5130",
+  "upstreamVersion": "1.18.32"
 }
