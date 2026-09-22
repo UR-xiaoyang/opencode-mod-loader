@@ -1,0 +1,53 @@
+# Auto-labeling configuration for pull requests
+
+# Documentation
+documentation:
+  - changed-files:
+    - any-glob-to-any-file: ['*.md', 'docs/**/*']
+
+# Core MOD Loader
+core:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'src/packages/desktop/src/main/mods.ts'
+      - 'src/packages/desktop/src/main/mods-*.ts'
+
+# UI Changes
+ui:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'src/packages/app/**/*'
+      - 'src/packages/desktop/src/renderer/**/*'
+
+# Server/Sidecar
+server:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'src/packages/desktop/src/main/sidecar.ts'
+      - 'src/packages/desktop/src/main/server.ts'
+
+# Examples
+examples:
+  - changed-files:
+    - any-glob-to-any-file: 'src/packages/desktop/mods/**/*'
+
+# Testing
+testing:
+  - changed-files:
+    - any-glob-to-any-file: '**/*.test.ts'
+
+# Dependencies
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'package.json'
+      - 'bun.lock'
+      - 'packages/**/package.json'
+
+# Tooling
+tooling:
+  - changed-files:
+    - any-glob-to-any-file:
+      - '.github/**/*'
+      - 'scripts/**/*'
+      - '*.config.*'

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 GitHub Discussions
+    url: https://github.com/UR-xiaoyang/opencode-mod-loader/discussions
+    about: Ask questions, share ideas, or discuss the project
+  - name: 📖 Documentation
+    url: https://github.com/UR-xiaoyang/opencode-mod-loader/blob/main/README.md
+    about: Read the project documentation
+  - name: 🔒 Security Issues
+    url: https://github.com/UR-xiaoyang/opencode-mod-loader/security/advisories/new
+    about: Report security vulnerabilities privately

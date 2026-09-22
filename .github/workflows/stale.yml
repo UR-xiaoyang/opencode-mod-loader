@@ -1,0 +1,67 @@
+name: Stale Issues
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly on Sunday
+  workflow_dispatch:
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close Stale Issues
+        uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Issues
+          days-before-stale: 60
+          days-before-close: 14
+          stale-issue-message: |
+            This issue has been automatically marked as stale because it has not had activity in the last 60 days.
+
+            It will be closed in 14 days if no further activity occurs.
+
+            If this issue is still relevant, please:
+            - Add a comment to keep it open
+            - Add the `keepalive` label
+            - Provide any additional information requested
+
+            Thank you for your contributions!
+          close-issue-message: |
+            This issue has been automatically closed due to inactivity.
+
+            If you believe this is still relevant, feel free to:
+            - Reopen the issue
+            - Create a new issue with updated information
+            - Start a discussion in [GitHub Discussions](https://github.com/UR-xiaoyang/opencode-mod-loader/discussions)
+          stale-issue-label: stale
+          exempt-issue-labels: 'keepalive,security,priority-high,priority-critical,in-progress'
+
+          # Pull Requests
+          days-before-pr-stale: 30
+          days-before-pr-close: 7
+          stale-pr-message: |
+            This pull request has been automatically marked as stale because it has not had activity in the last 30 days.
+
+            It will be closed in 7 days if no further activity occurs.
+
+            If you're still working on this, please:
+            - Push new commits or rebase on main
+            - Add a comment explaining the status
+            - Request a review if ready
+
+            Thank you for your contribution!
+          close-pr-message: |
+            This pull request has been automatically closed due to inactivity.
+
+            If you want to continue working on this:
+            - Reopen the PR
+            - Rebase on the latest main branch
+            - Request a review when ready
+          stale-pr-label: stale
+          exempt-pr-labels: 'keepalive,in-progress,needs-review'
+
+          # Operations
+          operations-per-run: 30
+          remove-stale-when-updated: true
