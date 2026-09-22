@@ -9,6 +9,9 @@ on:
 jobs:
   greeting:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
     steps:
       - name: Greet First Time Contributors
         uses: actions/first-interaction@v1
